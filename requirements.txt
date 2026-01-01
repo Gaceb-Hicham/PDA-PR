@@ -1,0 +1,32 @@
+# Plateforme d'Optimisation des Emplois du Temps d'Examens Universitaires
+# Requirements for Python backend and Streamlit frontend
+
+# Database
+mysql-connector-python>=8.3.0
+pymysql>=1.1.0
+
+# Web Framework
+streamlit>=1.30.0
+
+# Data Processing
+pandas>=2.1.0
+numpy>=1.26.0
+
+# Visualization
+plotly>=5.18.0
+altair>=5.2.0
+
+# Optimization (removed ortools due to conflicts - using custom algorithm)
+scipy>=1.11.0
+
+# Utilities
+python-dotenv>=1.0.0
+faker>=21.0.0
+bcrypt>=4.1.0
+
+# Export
+reportlab>=4.0.0
+openpyxl>=3.1.0
+
+# Performance
+tqdm>=4.66.0
