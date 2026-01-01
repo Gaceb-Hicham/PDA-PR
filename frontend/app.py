@@ -27,7 +27,8 @@ pages = [
     "➕ Saisie des données",
     "📊 Afficher les données",
     "📅 Génération EDT",
-    "📥 Export Excel",
+    "📥 Export Excel/CSV",
+    "📄 Export PDF",
     "📋 Planning par groupe"
 ]
 
@@ -409,7 +410,7 @@ elif "Génération EDT" in selection:
 # PAGE: EXPORT EXCEL
 # ============================================================================
 elif "Export Excel" in selection:
-    st.title("📥 Export Excel")
+    st.title("📥 Export Excel / CSV")
     
     query, _ = get_db()
     if not query:
@@ -476,6 +477,158 @@ elif "Export Excel" in selection:
                                   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
             else:
                 st.warning("Aucun examen planifié. Générez d'abord le planning.")
+
+
+# ============================================================================
+# PAGE: EXPORT PDF
+# ============================================================================
+elif "Export PDF" in selection:
+    st.title("📄 Export PDF - Plannings")
+    
+    query, _ = get_db()
+    if not query:
+        st.error("Erreur de connexion")
+        st.stop()
+    
+    st.markdown("""
+    ### Générer des PDF pour:
+    - **Planning étudiant** - Par formation/groupe
+    - **Planning professeur** - Surveillances assignées
+    - **Planning salle** - Occupation des amphithéâtres
+    """)
+    
+    tab1, tab2, tab3 = st.tabs(["👨‍🎓 Étudiants", "👨‍🏫 Professeurs", "🏢 Salles"])
+    
+    # --- PDF Étudiant ---
+    with tab1:
+        st.subheader("📄 Planning Étudiant / Formation")
+        
+        formations = query("SELECT id, nom, code, niveau FROM formations ORDER BY nom")
+        if formations:
+            form_options = {f['nom']: (f['id'], f['code'], f['niveau']) for f in formations}
+            selected = st.selectbox("Choisir la formation:", list(form_options.keys()), key="pdf_form")
+            formation_id, formation_code, niveau = form_options[selected]
+            
+            groupe = st.text_input("Groupe (ex: GL01-GL02)", value=f"{formation_code}01-02")
+            
+            if st.button("📄 Générer PDF Étudiant", type="primary"):
+                examens = query("""
+                    SELECT e.date_examen as date, ch.libelle as heure,
+                           m.code as module, l.code as salle
+                    FROM examens e
+                    JOIN modules m ON e.module_id = m.id
+                    JOIN lieu_examen l ON e.salle_id = l.id
+                    JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                    WHERE m.formation_id = %s
+                    ORDER BY e.date_examen, ch.ordre
+                """, (formation_id,))
+                
+                if examens:
+                    try:
+                        from services.pdf_generator import generate_student_schedule_pdf
+                        pdf = generate_student_schedule_pdf(
+                            selected, groupe, niveau, examens
+                        )
+                        st.download_button(
+                            "⬇️ Télécharger PDF", pdf, 
+                            f"planning_{formation_code}_{groupe}.pdf",
+                            "application/pdf"
+                        )
+                        st.success("✅ PDF généré!")
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+                else:
+                    st.warning("Aucun examen planifié pour cette formation")
+        else:
+            st.warning("Aucune formation trouvée")
+    
+    # --- PDF Professeur ---
+    with tab2:
+        st.subheader("📄 Planning Professeur (Surveillances)")
+        
+        profs = query("""
+            SELECT p.id, p.nom, p.prenom, d.nom as dept
+            FROM professeurs p
+            JOIN departements d ON p.dept_id = d.id
+            ORDER BY p.nom
+        """)
+        
+        if profs:
+            prof_options = {f"{p['prenom']} {p['nom']} ({p['dept']})": (p['id'], p['nom'], p['prenom'], p['dept']) 
+                          for p in profs}
+            selected = st.selectbox("Choisir le professeur:", list(prof_options.keys()), key="pdf_prof")
+            prof_id, nom, prenom, dept = prof_options[selected]
+            
+            if st.button("📄 Générer PDF Professeur", type="primary"):
+                surveillances = query("""
+                    SELECT e.date_examen as date, ch.libelle as heure,
+                           m.code as module, l.code as salle, s.role
+                    FROM surveillances s
+                    JOIN examens e ON s.examen_id = e.id
+                    JOIN modules m ON e.module_id = m.id
+                    JOIN lieu_examen l ON e.salle_id = l.id
+                    JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                    WHERE s.professeur_id = %s
+                    ORDER BY e.date_examen, ch.ordre
+                """, (prof_id,))
+                
+                if surveillances:
+                    try:
+                        from services.pdf_generator import generate_professor_schedule_pdf
+                        pdf = generate_professor_schedule_pdf(nom, prenom, dept, surveillances)
+                        st.download_button(
+                            "⬇️ Télécharger PDF", pdf,
+                            f"surveillances_{nom}_{prenom}.pdf",
+                            "application/pdf"
+                        )
+                        st.success("✅ PDF généré!")
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+                else:
+                    st.warning("Aucune surveillance assignée à ce professeur")
+        else:
+            st.warning("Aucun professeur trouvé")
+    
+    # --- PDF Salle ---
+    with tab3:
+        st.subheader("📄 Planning Salle / Amphithéâtre")
+        
+        salles = query("SELECT id, nom, code, capacite FROM lieu_examen ORDER BY code")
+        
+        if salles:
+            salle_options = {f"{s['code']} - {s['nom']} ({s['capacite']} places)": 
+                           (s['id'], s['nom'], s['code'], s['capacite']) for s in salles}
+            selected = st.selectbox("Choisir la salle:", list(salle_options.keys()), key="pdf_salle")
+            salle_id, salle_nom, salle_code, capacite = salle_options[selected]
+            
+            if st.button("📄 Générer PDF Salle", type="primary"):
+                examens = query("""
+                    SELECT e.date_examen as date, ch.libelle as heure,
+                           m.code as module, f.nom as formation
+                    FROM examens e
+                    JOIN modules m ON e.module_id = m.id
+                    JOIN formations f ON m.formation_id = f.id
+                    JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                    WHERE e.salle_id = %s
+                    ORDER BY e.date_examen, ch.ordre
+                """, (salle_id,))
+                
+                if examens:
+                    try:
+                        from services.pdf_generator import generate_room_schedule_pdf
+                        pdf = generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens)
+                        st.download_button(
+                            "⬇️ Télécharger PDF", pdf,
+                            f"occupation_{salle_code}.pdf",
+                            "application/pdf"
+                        )
+                        st.success("✅ PDF généré!")
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+                else:
+                    st.warning("Aucun examen planifié dans cette salle")
+        else:
+            st.warning("Aucune salle trouvée")
 
 
 # ============================================================================
