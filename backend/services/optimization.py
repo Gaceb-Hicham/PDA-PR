@@ -59,6 +59,7 @@ class ScheduledExam:
     salle_id: int
     slot: ExamSlot
     nb_etudiants: int
+    prof_id: int = None  # Surveillant assigné
 
 
 @dataclass
@@ -307,12 +308,13 @@ class ExamScheduler:
                 if not prof_id:
                     continue
                 
-                # Planifier l'examen
+                # Planifier l'examen avec le surveillant
                 scheduled_exam = ScheduledExam(
                     module_id=exam.module_id,
                     salle_id=room['id'],
                     slot=slot,
-                    nb_etudiants=exam.nb_etudiants
+                    nb_etudiants=exam.nb_etudiants,
+                    prof_id=prof_id  # IMPORTANT: Stocker le surveillant
                 )
                 
                 self.scheduled_exams.append(scheduled_exam)
@@ -342,35 +344,46 @@ class ExamScheduler:
         return scheduled_count, conflict_count, execution_time
     
     def save_to_database(self):
-        """Sauvegarde les examens planifiés dans la base de données"""
+        """Sauvegarde les examens planifiés ET les surveillances dans la base de données"""
         if not self.scheduled_exams:
             print("⚠️ Aucun examen à sauvegarder")
             return
         
-        print("\n💾 Sauvegarde des examens...")
+        print("\n💾 Sauvegarde des examens et surveillances...")
         
-        # Préparer les données pour insertion batch
-        exam_data = []
-        for se in self.scheduled_exams:
-            exam_data.append((
-                se.module_id,
-                self.session_id,
-                se.salle_id,
-                se.slot.date,
-                se.slot.creneau_id,
-                90,  # durée par défaut
-                se.nb_etudiants,
-                'PLANIFIE'
-            ))
+        surveillance_count = 0
         
         with get_cursor() as cursor:
-            cursor.executemany("""
-                INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, 
-                                    duree_minutes, nb_etudiants_prevus, statut)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-            """, exam_data)
+            for se in self.scheduled_exams:
+                # Insérer l'examen
+                cursor.execute("""
+                    INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, 
+                                        duree_minutes, nb_etudiants_prevus, statut)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    se.module_id,
+                    self.session_id,
+                    se.salle_id,
+                    se.slot.date,
+                    se.slot.creneau_id,
+                    90,
+                    se.nb_etudiants,
+                    'PLANIFIE'
+                ))
+                
+                # Récupérer l'ID de l'examen inséré
+                exam_id = cursor.lastrowid
+                
+                # IMPORTANT: Sauvegarder la surveillance du professeur
+                if se.prof_id and exam_id:
+                    cursor.execute("""
+                        INSERT INTO surveillances (examen_id, professeur_id, role)
+                        VALUES (%s, %s, 'RESPONSABLE')
+                    """, (exam_id, se.prof_id))
+                    surveillance_count += 1
         
-        print(f"✅ {len(exam_data)} examens sauvegardés")
+        print(f"✅ {len(self.scheduled_exams)} examens sauvegardés")
+        print(f"✅ {surveillance_count} surveillances assignées")
         
         # Sauvegarder les conflits
         if self.conflicts:

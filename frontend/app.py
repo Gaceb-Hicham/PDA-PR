@@ -1,6 +1,6 @@
 """
 Application Streamlit - Plateforme EDT Examens
-Version avec saisie manuelle et export Excel
+Version avec saisie manuelle, export Excel et caching
 """
 import streamlit as st
 import pandas as pd
@@ -42,6 +42,53 @@ def get_db():
         return execute_query, get_cursor
     except Exception as e:
         return None, None
+
+
+# Fonctions de requête avec cache pour améliorer les performances
+@st.cache_data(ttl=300)
+def get_cached_departments():
+    """Récupère les départements (cache 5 min)"""
+    query, _ = get_db()
+    if query:
+        return query("SELECT id, nom, code FROM departements ORDER BY nom")
+    return []
+
+
+@st.cache_data(ttl=300)
+def get_cached_formations():
+    """Récupère les formations (cache 5 min)"""
+    query, _ = get_db()
+    if query:
+        return query("""
+            SELECT f.id, f.nom, f.code, f.niveau, d.nom as dept, d.id as dept_id
+            FROM formations f
+            JOIN departements d ON f.dept_id = d.id
+            ORDER BY d.nom, f.niveau, f.nom
+        """)
+    return []
+
+
+@st.cache_data(ttl=300)
+def get_cached_professors():
+    """Récupère les professeurs (cache 5 min)"""
+    query, _ = get_db()
+    if query:
+        return query("""
+            SELECT p.id, p.nom, p.prenom, d.nom as dept, d.id as dept_id
+            FROM professeurs p
+            JOIN departements d ON p.dept_id = d.id
+            ORDER BY d.nom, p.nom
+        """)
+    return []
+
+
+@st.cache_data(ttl=300)
+def get_cached_rooms():
+    """Récupère les salles (cache 5 min)"""
+    query, _ = get_db()
+    if query:
+        return query("SELECT id, nom, code, type, capacite, batiment FROM lieu_examen ORDER BY type, code")
+    return []
 
 
 def export_to_excel(dataframe, filename):
