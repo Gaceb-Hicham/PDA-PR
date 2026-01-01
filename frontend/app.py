@@ -503,18 +503,56 @@ elif "Export PDF" in selection:
     with tab1:
         st.subheader("📄 Planning Étudiant / Formation")
         
-        formations = query("SELECT id, nom, code, niveau FROM formations ORDER BY nom")
+        # Filtres
+        col1, col2 = st.columns(2)
+        
+        # Filtre département
+        depts = query("SELECT id, nom FROM departements ORDER BY nom")
+        with col1:
+            if depts:
+                dept_opts = {"Tous les départements": None}
+                dept_opts.update({d['nom']: d['id'] for d in depts})
+                filter_dept = st.selectbox("Département:", list(dept_opts.keys()), key="pdf_dept")
+                dept_id = dept_opts[filter_dept]
+            else:
+                dept_id = None
+        
+        # Filtre niveau
+        with col2:
+            niveaux = ["Tous", "L1", "L2", "L3", "M1", "M2"]
+            filter_niveau = st.selectbox("Niveau:", niveaux, key="pdf_niveau")
+        
+        # Formations filtrées
+        formations_query = """
+            SELECT f.id, f.nom, f.code, f.niveau, d.nom as dept
+            FROM formations f
+            JOIN departements d ON f.dept_id = d.id
+            WHERE 1=1
+        """
+        params = []
+        if dept_id:
+            formations_query += " AND f.dept_id = %s"
+            params.append(dept_id)
+        if filter_niveau != "Tous":
+            formations_query += " AND f.niveau = %s"
+            params.append(filter_niveau)
+        formations_query += " ORDER BY d.nom, f.niveau, f.nom"
+        
+        formations = query(formations_query, tuple(params) if params else None)
+        
         if formations:
-            form_options = {f['nom']: (f['id'], f['code'], f['niveau']) for f in formations}
-            selected = st.selectbox("Choisir la formation:", list(form_options.keys()), key="pdf_form")
+            form_options = {f"{f['dept']} - {f['nom']}": (f['id'], f['code'], f['niveau']) for f in formations}
+            selected = st.selectbox("Formation:", list(form_options.keys()), key="pdf_form")
             formation_id, formation_code, niveau = form_options[selected]
             
-            groupe = st.text_input("Groupe (ex: GL01-GL02)", value=f"{formation_code}01-02")
+            groupe = st.text_input("Groupe (ex: GL01-GL02):", value=f"{formation_code}01-02")
             
             if st.button("📄 Générer PDF Étudiant", type="primary"):
                 examens = query("""
-                    SELECT e.date_examen as date, ch.libelle as heure,
-                           m.code as module, l.code as salle
+                    SELECT e.date_examen as date, 
+                           ch.heure_debut, ch.heure_fin,
+                           m.code as module_code, m.nom as module_nom, 
+                           l.code as salle
                     FROM examens e
                     JOIN modules m ON e.module_id = m.id
                     JOIN lieu_examen l ON e.salle_id = l.id
@@ -527,7 +565,7 @@ elif "Export PDF" in selection:
                     try:
                         from services.pdf_generator import generate_student_schedule_pdf
                         pdf = generate_student_schedule_pdf(
-                            selected, groupe, niveau, examens
+                            selected.split(" - ")[-1], groupe, niveau, examens
                         )
                         st.download_button(
                             "⬇️ Télécharger PDF", pdf, 
@@ -540,29 +578,45 @@ elif "Export PDF" in selection:
                 else:
                     st.warning("Aucun examen planifié pour cette formation")
         else:
-            st.warning("Aucune formation trouvée")
+            st.warning("Aucune formation trouvée avec ces filtres")
     
     # --- PDF Professeur ---
     with tab2:
         st.subheader("📄 Planning Professeur (Surveillances)")
         
-        profs = query("""
+        # Filtre département
+        depts = query("SELECT id, nom FROM departements ORDER BY nom")
+        if depts:
+            dept_opts = {"Tous les départements": None}
+            dept_opts.update({d['nom']: d['id'] for d in depts})
+            filter_dept_prof = st.selectbox("Filtrer par département:", list(dept_opts.keys()), key="pdf_dept_prof")
+            prof_dept_id = dept_opts[filter_dept_prof]
+        else:
+            prof_dept_id = None
+        
+        prof_query = """
             SELECT p.id, p.nom, p.prenom, d.nom as dept
             FROM professeurs p
             JOIN departements d ON p.dept_id = d.id
-            ORDER BY p.nom
-        """)
+        """
+        if prof_dept_id:
+            prof_query += " WHERE p.dept_id = %s"
+            profs = query(prof_query + " ORDER BY p.nom, p.prenom", (prof_dept_id,))
+        else:
+            profs = query(prof_query + " ORDER BY d.nom, p.nom, p.prenom")
         
         if profs:
             prof_options = {f"{p['prenom']} {p['nom']} ({p['dept']})": (p['id'], p['nom'], p['prenom'], p['dept']) 
                           for p in profs}
-            selected = st.selectbox("Choisir le professeur:", list(prof_options.keys()), key="pdf_prof")
+            selected = st.selectbox("Professeur:", list(prof_options.keys()), key="pdf_prof")
             prof_id, nom, prenom, dept = prof_options[selected]
             
             if st.button("📄 Générer PDF Professeur", type="primary"):
                 surveillances = query("""
-                    SELECT e.date_examen as date, ch.libelle as heure,
-                           m.code as module, l.code as salle, s.role
+                    SELECT e.date_examen as date, 
+                           ch.heure_debut, ch.heure_fin,
+                           m.code as module_code, m.nom as module_nom, 
+                           l.code as salle, s.role
                     FROM surveillances s
                     JOIN examens e ON s.examen_id = e.id
                     JOIN modules m ON e.module_id = m.id
@@ -603,8 +657,10 @@ elif "Export PDF" in selection:
             
             if st.button("📄 Générer PDF Salle", type="primary"):
                 examens = query("""
-                    SELECT e.date_examen as date, ch.libelle as heure,
-                           m.code as module, f.nom as formation
+                    SELECT e.date_examen as date, 
+                           ch.heure_debut, ch.heure_fin,
+                           m.code as module_code, m.nom as module_nom, 
+                           f.nom as formation
                     FROM examens e
                     JOIN modules m ON e.module_id = m.id
                     JOIN formations f ON m.formation_id = f.id

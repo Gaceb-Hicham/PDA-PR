@@ -8,7 +8,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import cm, mm
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 from io import BytesIO
 from datetime import datetime
@@ -33,7 +33,6 @@ def create_header_style():
         fontSize=14,
         textColor=colors.white,
         alignment=TA_CENTER,
-        backColor=colors.HexColor('#004E89')
     ))
     
     styles.add(ParagraphStyle(
@@ -47,6 +46,24 @@ def create_header_style():
     return styles
 
 
+def format_time(heure_debut, heure_fin=None):
+    """Formate l'heure pour l'affichage"""
+    if heure_debut:
+        start = str(heure_debut)[:5]  # HH:MM
+        if heure_fin:
+            end = str(heure_fin)[:5]
+            return f"{start} - {end}"
+        return start
+    return ""
+
+
+def format_module(code, nom=None):
+    """Formate le nom du module - affiche Nom (Code) ou juste Nom"""
+    if nom:
+        return f"{nom} ({code})" if code else nom
+    return code or ""
+
+
 def generate_student_schedule_pdf(formation_name, groupe, niveau, examens):
     """
     Génère un PDF du planning étudiant
@@ -55,7 +72,7 @@ def generate_student_schedule_pdf(formation_name, groupe, niveau, examens):
         formation_name: Nom de la formation (ex: "Génie Logiciel")
         groupe: Groupe (ex: "GL01-GL02")
         niveau: Niveau (ex: "M1")
-        examens: Liste de dict avec date, heure, module, salle
+        examens: Liste de dict avec date, heure_debut, heure_fin, module_code, module_nom, salle
     
     Returns:
         BytesIO contenant le PDF
@@ -66,45 +83,67 @@ def generate_student_schedule_pdf(formation_name, groupe, niveau, examens):
     elements = []
     
     # En-tête université
-    elements.append(Paragraph("🎓 Université M'Hamed Bougara", styles['UnivTitle']))
+    elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
     elements.append(Paragraph("Faculté des Sciences", styles['Normal']))
     elements.append(Spacer(1, 10))
     
     # Titre du planning
-    elements.append(Paragraph("PLANNING DES EXAMENS DE SEMESTRE - S1", styles['ScheduleTitle']))
+    title_table = Table([["PLANNING DES EXAMENS - SEMESTRE S1"]], colWidths=[16*cm])
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#004E89')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(title_table)
     elements.append(Spacer(1, 10))
     
     # Informations formation
-    elements.append(Paragraph(f"<b>Formation:</b> {formation_name} | <b>Niveau:</b> {niveau} | <b>Groupe:</b> {groupe}", styles['SubInfo']))
+    elements.append(Paragraph(f"<b>Formation:</b> {formation_name}", styles['SubInfo']))
+    elements.append(Paragraph(f"<b>Niveau:</b> {niveau} | <b>Groupe:</b> {groupe}", styles['SubInfo']))
     elements.append(Paragraph(f"<b>Année Universitaire:</b> 2025/2026", styles['SubInfo']))
     elements.append(Spacer(1, 15))
     
     # Tableau des examens
     if examens:
-        table_data = [['Date', 'Heure', 'Module', 'Salle']]
+        table_data = [['Date', 'Horaire', 'Module', 'Salle']]
         for exam in examens:
+            # Formater l'heure (début - fin)
+            heure = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
+            if not heure:
+                heure = str(exam.get('heure', ''))[:5]
+            
+            # Formater le module (nom + code)
+            module = format_module(exam.get('module_code', exam.get('module', '')), 
+                                  exam.get('module_nom'))
+            
             table_data.append([
                 str(exam.get('date', '')),
-                str(exam.get('heure', '')),
-                str(exam.get('module', '')),
+                heure,
+                module,
                 str(exam.get('salle', ''))
             ])
         
-        table = Table(table_data, colWidths=[4*cm, 3*cm, 6*cm, 3*cm])
+        table = Table(table_data, colWidths=[3*cm, 3*cm, 7*cm, 3*cm])
         table.setStyle(TableStyle([
             # En-tête
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004E89')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('FONTSIZE', (0, 0), (-1, 0), 10),
             ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
             
             # Corps
-            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F5F5F5')),
+            ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8F9FA')),
             ('TEXTCOLOR', (0, 1), (-1, -1), colors.black),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 10),
-            ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+            ('ALIGN', (0, 1), (1, -1), 'CENTER'),  # Date et heure centrés
+            ('ALIGN', (2, 1), (2, -1), 'LEFT'),    # Module à gauche
+            ('ALIGN', (3, 1), (3, -1), 'CENTER'),  # Salle centré
             
             # Bordures
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
@@ -132,14 +171,6 @@ def generate_student_schedule_pdf(formation_name, groupe, niveau, examens):
 def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveillances):
     """
     Génère un PDF du planning de surveillance d'un professeur
-    
-    Args:
-        prof_nom, prof_prenom: Nom du professeur
-        departement: Département
-        surveillances: Liste de dict avec date, heure, module, salle, role
-    
-    Returns:
-        BytesIO contenant le PDF
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
@@ -147,12 +178,22 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
     elements = []
     
     # En-tête
-    elements.append(Paragraph("🎓 Université M'Hamed Bougara", styles['UnivTitle']))
+    elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
     elements.append(Paragraph("Faculté des Sciences", styles['Normal']))
     elements.append(Spacer(1, 10))
     
     # Titre
-    elements.append(Paragraph("PLANNING DE SURVEILLANCE - SESSION S1", styles['ScheduleTitle']))
+    title_table = Table([["PLANNING DE SURVEILLANCE - SESSION S1"]], colWidths=[16*cm])
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(title_table)
     elements.append(Spacer(1, 10))
     
     # Info professeur
@@ -163,17 +204,24 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
     
     # Tableau
     if surveillances:
-        table_data = [['Date', 'Heure', 'Module', 'Salle', 'Rôle']]
+        table_data = [['Date', 'Horaire', 'Module', 'Salle', 'Rôle']]
         for surv in surveillances:
+            heure = format_time(surv.get('heure_debut'), surv.get('heure_fin'))
+            if not heure:
+                heure = str(surv.get('heure', ''))[:5]
+            
+            module = format_module(surv.get('module_code', surv.get('module', '')),
+                                  surv.get('module_nom'))
+            
             table_data.append([
                 str(surv.get('date', '')),
-                str(surv.get('heure', '')),
-                str(surv.get('module', '')),
+                heure,
+                module,
                 str(surv.get('salle', '')),
                 str(surv.get('role', 'Surveillant'))
             ])
         
-        table = Table(table_data, colWidths=[3*cm, 2.5*cm, 5*cm, 2.5*cm, 3*cm])
+        table = Table(table_data, colWidths=[2.5*cm, 2.5*cm, 5.5*cm, 2.5*cm, 3*cm])
         table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -185,12 +233,16 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('ALIGN', (2, 1), (2, -1), 'LEFT'),  # Module à gauche
         ]))
         elements.append(table)
         
         # Résumé
         elements.append(Spacer(1, 20))
-        elements.append(Paragraph(f"<b>Total surveillances:</b> {len(surveillances)}", styles['SubInfo']))
+        nb_resp = sum(1 for s in surveillances if s.get('role') == 'RESPONSABLE')
+        nb_surv = len(surveillances) - nb_resp
+        elements.append(Paragraph(f"<b>Total:</b> {len(surveillances)} surveillances ({nb_resp} responsable, {nb_surv} surveillant)", 
+                                 styles['SubInfo']))
     else:
         elements.append(Paragraph("Aucune surveillance assignée", styles['Normal']))
     
@@ -207,15 +259,6 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
 def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens):
     """
     Génère un PDF du planning d'une salle
-    
-    Args:
-        salle_nom: Nom de la salle
-        salle_code: Code (ex: AMP10)
-        capacite: Capacité de la salle
-        examens: Liste de dict avec date, heure, module, formation, surveillant
-    
-    Returns:
-        BytesIO contenant le PDF
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
@@ -223,12 +266,22 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens):
     elements = []
     
     # En-tête
-    elements.append(Paragraph("🎓 Université M'Hamed Bougara", styles['UnivTitle']))
+    elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
     elements.append(Paragraph("Faculté des Sciences", styles['Normal']))
     elements.append(Spacer(1, 10))
     
     # Titre
-    elements.append(Paragraph("PLANNING D'OCCUPATION - SESSION S1", styles['ScheduleTitle']))
+    title_table = Table([["PLANNING D'OCCUPATION - SESSION S1"]], colWidths=[16*cm])
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#27AE60')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 12),
+        ('TOPPADDING', (0, 0), (-1, -1), 10),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+    ]))
+    elements.append(title_table)
     elements.append(Spacer(1, 10))
     
     # Info salle
@@ -238,12 +291,19 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens):
     
     # Tableau
     if examens:
-        table_data = [['Date', 'Heure', 'Module', 'Formation']]
+        table_data = [['Date', 'Horaire', 'Module', 'Formation']]
         for exam in examens:
+            heure = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
+            if not heure:
+                heure = str(exam.get('heure', ''))[:5]
+            
+            module = format_module(exam.get('module_code', exam.get('module', '')),
+                                  exam.get('module_nom'))
+            
             table_data.append([
                 str(exam.get('date', '')),
-                str(exam.get('heure', '')),
-                str(exam.get('module', '')),
+                heure,
+                module,
                 str(exam.get('formation', ''))
             ])
         
@@ -259,12 +319,13 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens):
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 6),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ('ALIGN', (2, 1), (3, -1), 'LEFT'),  # Module et formation à gauche
         ]))
         elements.append(table)
         
         # Résumé
         elements.append(Spacer(1, 20))
-        elements.append(Paragraph(f"<b>Total examens:</b> {len(examens)}", styles['SubInfo']))
+        elements.append(Paragraph(f"<b>Total:</b> {len(examens)} examens planifiés", styles['SubInfo']))
     else:
         elements.append(Paragraph("Aucun examen planifié dans cette salle", styles['Normal']))
     
@@ -278,18 +339,17 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens):
     return buffer
 
 
-def generate_master_schedule_pdf(formation_code, formation_name, groupes_data):
+def generate_formation_master_pdf(formation_code, formation_name, niveau, groupes, examens_by_date):
     """
-    Génère un PDF du planning master comme dans la capture d'écran
-    Format tableau avec jours en colonnes et groupes en lignes
+    Génère un PDF du planning master (style tableau par date avec groupes)
+    Format: Colonnes = dates, Lignes = groupes avec leur salle
     
     Args:
-        formation_code: Code (ex: "M GL-S1")
-        formation_name: Nom complet
-        groupes_data: Dict avec {groupe: {date: {module, salle}}}
-    
-    Returns:
-        BytesIO contenant le PDF
+        formation_code: ex "GL"
+        formation_name: ex "Génie Logiciel"
+        niveau: ex "M1"
+        groupes: Liste des groupes ["GL01-GL02", "GL03-GL04", "GL05"]
+        examens_by_date: Dict {date: {module, heure, salles: {groupe: salle}}}
     """
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), topMargin=1.5*cm, bottomMargin=1.5*cm)
@@ -299,59 +359,64 @@ def generate_master_schedule_pdf(formation_code, formation_name, groupes_data):
     # En-tête
     elements.append(Paragraph("Université M'Hamed Bougara - Faculté des Sciences", styles['UnivTitle']))
     elements.append(Paragraph(f"PLANNING DES EXAMENS DE SEMESTRE - S1", styles['Normal']))
-    elements.append(Paragraph(f"<b>{formation_code}</b> - Année Universitaire: 2025/2026", styles['SubInfo']))
+    elements.append(Paragraph(f"<b>{niveau} {formation_name}</b> - Année Universitaire: 2025/2026", styles['SubInfo']))
     elements.append(Spacer(1, 15))
     
-    # Créer le tableau style planning
-    if groupes_data:
-        # Récupérer toutes les dates uniques
-        all_dates = set()
-        for groupe_info in groupes_data.values():
-            all_dates.update(groupe_info.keys())
-        sorted_dates = sorted(all_dates)
+    if examens_by_date:
+        # Créer le tableau
+        dates = sorted(examens_by_date.keys())
         
-        # En-tête du tableau
-        header = ['GROUPES'] + [str(d) for d in sorted_dates]
+        # En-tête: Groupes | Date1 | Date2 | ...
+        header = ['GROUPES'] + [str(d) for d in dates]
         table_data = [header]
         
-        # Ligne pour l'heure
-        heure_row = ['Séance'] + ['13:45:00'] * len(sorted_dates)
+        # Ligne heure
+        heure_row = ['Séance']
+        for d in dates:
+            exam = examens_by_date[d]
+            heure_row.append(format_time(exam.get('heure_debut'), exam.get('heure_fin')))
         table_data.append(heure_row)
         
-        # Ligne pour les modules
-        for groupe, modules in groupes_data.items():
-            module_row = [f"Matière ({groupe})"]
-            for date in sorted_dates:
-                if date in modules:
-                    module_row.append(modules[date].get('module', ''))
-                else:
-                    module_row.append('')
-            table_data.append(module_row)
-            
-            # Ligne pour les salles
+        # Ligne module
+        module_row = ['Matière']
+        for d in dates:
+            exam = examens_by_date[d]
+            module_row.append(format_module(exam.get('module_code'), exam.get('module_nom')))
+        table_data.append(module_row)
+        
+        # Lignes par groupe
+        for groupe in groupes:
             salle_row = [groupe]
-            for date in sorted_dates:
-                if date in modules:
-                    salle_row.append(modules[date].get('salle', ''))
-                else:
-                    salle_row.append('')
+            for d in dates:
+                exam = examens_by_date[d]
+                salles = exam.get('salles', {})
+                salle_row.append(salles.get(groupe, ''))
             table_data.append(salle_row)
         
-        col_width = 2.2*cm
-        table = Table(table_data, colWidths=[3*cm] + [col_width] * len(sorted_dates))
+        col_width = min(2.5*cm, 24*cm / (len(dates) + 1))
+        table = Table(table_data, colWidths=[3.5*cm] + [col_width] * len(dates))
         table.setStyle(TableStyle([
+            # En-tête dates (orange)
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#FFA500')),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.black),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, -1), 8),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.black),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            # Colonne groupes (jaune clair)
             ('BACKGROUND', (0, 1), (0, -1), colors.HexColor('#FFFFCC')),
+            # Lignes heure et matière
+            ('BACKGROUND', (1, 1), (-1, 2), colors.HexColor('#FFF5E6')),
         ]))
         elements.append(table)
+    
+    # Pied de page
+    elements.append(Spacer(1, 20))
+    elements.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", 
+                             ParagraphStyle('Footer', fontSize=8, textColor=colors.grey, alignment=TA_CENTER)))
     
     doc.build(elements)
     buffer.seek(0)
