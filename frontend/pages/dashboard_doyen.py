@@ -1,184 +1,108 @@
 """
-Page Tableau de bord - Vue Vice-Doyen/Doyen
+Page Dashboard Doyen - VERSION OPTIMISÉE
 """
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import plotly.graph_objects as go
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
-from services.statistics import (
-    get_global_stats, get_department_stats, get_session_stats,
-    get_daily_exam_distribution, get_kpis_dashboard
-)
+from services.statistics import get_global_stats, get_department_stats, get_daily_exam_distribution
 from database import execute_query
 
 
+def q(sql, params=None, fetch='all'):
+    try:
+        return execute_query(sql, params, fetch=fetch)
+    except:
+        return [] if fetch == 'all' else None
+
+
 def render_dashboard():
-    """Affiche le tableau de bord principal"""
     st.header("🏠 Tableau de Bord Global")
     
-    # Récupérer les KPIs
     try:
+        # Stats globales - une seule requête optimisée
         stats = get_global_stats()
-        session_id = 1  # Session par défaut
         
-        # Ligne de métriques principales
-        col1, col2, col3, col4, col5 = st.columns(5)
+        # Métriques principales
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c1.metric("👨‍🎓 Étudiants", f"{stats.get('total_etudiants', 0):,}", "Actifs")
+        c2.metric("👨‍🏫 Professeurs", f"{stats.get('total_professeurs', 0):,}", "Corps enseignant")
+        c3.metric("📚 Formations", f"{stats.get('total_formations', 0):,}", "L1 à M2")
+        c4.metric("📖 Modules", f"{stats.get('total_modules', 0):,}", "S1 & S2")
+        c5.metric("📝 Inscriptions", f"{stats.get('total_inscriptions', 0):,}", "Total")
         
-        with col1:
-            st.metric(
-                label="👨‍🎓 Étudiants",
-                value=f"{stats.get('total_etudiants', 0):,}",
-                delta="Actifs"
-            )
+        st.divider()
         
-        with col2:
-            st.metric(
-                label="👨‍🏫 Professeurs",
-                value=f"{stats.get('total_professeurs', 0):,}",
-                delta="Corps enseignant"
-            )
+        # Graphiques par département
+        c1, c2 = st.columns(2)
         
-        with col3:
-            st.metric(
-                label="📚 Formations",
-                value=f"{stats.get('total_formations', 0):,}",
-                delta="L1 à M2"
-            )
-        
-        with col4:
-            st.metric(
-                label="📖 Modules",
-                value=f"{stats.get('total_modules', 0):,}",
-                delta="S1 & S2"
-            )
-        
-        with col5:
-            st.metric(
-                label="📝 Inscriptions",
-                value=f"{stats.get('total_inscriptions', 0):,}",
-                delta="Total"
-            )
-        
-        st.markdown("---")
-        
-        # Graphiques
-        col_left, col_right = st.columns(2)
-        
-        with col_left:
+        with c1:
             st.subheader("📊 Répartition par Département")
             dept_stats = get_department_stats()
             
             if dept_stats:
-                df_dept = pd.DataFrame(dept_stats)
-                fig = px.bar(
-                    df_dept,
-                    x='departement',
-                    y=['nb_etudiants', 'nb_professeurs'],
-                    title="Étudiants et Professeurs par Département",
-                    barmode='group',
-                    color_discrete_sequence=['#FF6B35', '#004E89']
-                )
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font_color='white',
-                    xaxis_title="",
-                    yaxis_title="Nombre",
-                    legend_title=""
-                )
+                df = pd.DataFrame(dept_stats)
+                fig = px.bar(df, x='departement', y=['nb_etudiants', 'nb_professeurs'],
+                           barmode='group', color_discrete_sequence=['#FF6B35', '#004E89'])
+                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                                font_color='white', xaxis_title="", yaxis_title="Nombre")
                 st.plotly_chart(fig, use_container_width=True)
-            else:
-                st.info("Aucune donnée de département disponible")
         
-        with col_right:
+        with c2:
             st.subheader("🏛️ Modules par Département")
-            
             if dept_stats:
-                df_dept = pd.DataFrame(dept_stats)
-                fig = px.pie(
-                    df_dept,
-                    values='nb_modules',
-                    names='departement',
-                    title="Distribution des Modules",
-                    color_discrete_sequence=px.colors.qualitative.Set2
-                )
-                fig.update_layout(
-                    plot_bgcolor='rgba(0,0,0,0)',
-                    paper_bgcolor='rgba(0,0,0,0)',
-                    font_color='white'
-                )
+                df = pd.DataFrame(dept_stats)
+                fig = px.pie(df, values='nb_modules', names='departement',
+                           color_discrete_sequence=px.colors.qualitative.Set2)
+                fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                                font_color='white')
                 st.plotly_chart(fig, use_container_width=True)
         
-        # Section examens planifiés
-        st.markdown("---")
+        st.divider()
+        
+        # Examens planifiés
         st.subheader("📅 Planning des Examens")
         
-        # Vérifier si des examens sont planifiés
-        examens = execute_query(
-            "SELECT COUNT(*) as total FROM examens WHERE session_id = %s",
-            (session_id,), fetch='one'
-        )
+        exam_count = q("SELECT COUNT(*) as total FROM examens WHERE session_id = 1", fetch='one')
         
-        if examens and examens['total'] > 0:
-            col1, col2 = st.columns([2, 1])
+        if exam_count and exam_count['total'] > 0:
+            c1, c2 = st.columns([2, 1])
             
-            with col1:
-                daily_dist = get_daily_exam_distribution(session_id)
-                if daily_dist:
-                    df_daily = pd.DataFrame(daily_dist)
-                    fig = px.line(
-                        df_daily,
-                        x='date_examen',
-                        y='nb_examens',
-                        title="Examens par Jour",
-                        markers=True
-                    )
+            with c1:
+                daily = get_daily_exam_distribution(1)
+                if daily:
+                    df = pd.DataFrame(daily)
+                    fig = px.line(df, x='date_examen', y='nb_examens', markers=True)
                     fig.update_traces(line_color='#FF6B35')
-                    fig.update_layout(
-                        plot_bgcolor='rgba(0,0,0,0)',
-                        paper_bgcolor='rgba(0,0,0,0)',
-                        font_color='white'
-                    )
+                    fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
+                                    font_color='white')
                     st.plotly_chart(fig, use_container_width=True)
             
-            with col2:
-                st.metric("📝 Examens Planifiés", examens['total'])
-                
-                # Statut des conflits
-                conflits = execute_query(
-                    "SELECT COUNT(*) as total FROM conflits WHERE resolu = FALSE",
-                    fetch='one'
-                )
-                if conflits and conflits['total'] > 0:
-                    st.error(f"⚠️ {conflits['total']} conflits non résolus")
+            with c2:
+                st.metric("📝 Examens Planifiés", exam_count['total'])
+                conflicts = q("SELECT COUNT(*) as c FROM conflits WHERE resolu = FALSE", fetch='one')
+                if conflicts and conflicts['c'] > 0:
+                    st.error(f"⚠️ {conflicts['c']} conflits")
                 else:
                     st.success("✅ Aucun conflit")
         else:
-            st.warning("⚠️ Aucun examen planifié. Utilisez la page Planification pour générer l'EDT.")
-            
-            if st.button("📅 Aller à la Planification"):
-                st.session_state['page'] = 'planning'
-                st.rerun()
+            st.warning("⚠️ Aucun examen planifié")
         
-        # Tableau récapitulatif des départements
-        st.markdown("---")
-        st.subheader("📋 Récapitulatif par Département")
-        
+        # Récapitulatif
+        st.divider()
+        st.subheader("📋 Récapitulatif")
         if dept_stats:
-            df_recap = pd.DataFrame(dept_stats)
-            df_recap.columns = ['ID', 'Département', 'Code', 'Formations', 
-                               'Étudiants', 'Professeurs', 'Modules', 'Inscriptions']
-            df_recap = df_recap.drop('ID', axis=1)
-            st.dataframe(df_recap, use_container_width=True, hide_index=True)
+            df = pd.DataFrame(dept_stats)
+            df = df[['departement', 'code', 'nb_formations', 'nb_etudiants', 'nb_professeurs', 'nb_modules']]
+            df.columns = ['Département', 'Code', 'Formations', 'Étudiants', 'Professeurs', 'Modules']
+            st.dataframe(df, use_container_width=True, hide_index=True)
             
     except Exception as e:
-        st.error(f"❌ Erreur de connexion à la base de données: {e}")
-        st.info("Assurez-vous que MySQL est en cours d'exécution et que les données ont été générées.")
+        st.error(f"❌ Erreur: {e}")
 
 
 if __name__ == "__main__":
