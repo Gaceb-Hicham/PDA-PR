@@ -507,77 +507,153 @@ def generate_multi_group_pdf(formation_name, niveau, exams_by_group):
 
 def generate_department_pdf(dept_name, formations_data):
     """
-    Génère un PDF pour tout un département: une section par formation
+    Génère un PDF pour tout un département: une page par formation/groupe
+    Chaque groupe a sa propre section pour une lecture claire
     
     Args:
         dept_name: Nom du département
-        formations_data: Dict {formation_name: {'niveau': str, 'exams': [list]}}
+        formations_data: Dict {formation_name: {'niveau': str, 'exams': [list with groupe field]}}
     """
+    from reportlab.platypus import PageBreak
+    
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm)
     styles = create_header_style()
     elements = []
     
+    # Page de garde
+    elements.append(Spacer(1, 100))
+    elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
+    elements.append(Paragraph("Faculté des Sciences", styles['Normal']))
+    elements.append(Spacer(1, 50))
+    
+    title_table = Table([[f"PLANNINGS DES EXAMENS"]], colWidths=[16*cm])
+    title_table.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2C3E50')),
+        ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+        ('FONTSIZE', (0, 0), (-1, -1), 18),
+        ('TOPPADDING', (0, 0), (-1, -1), 15),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
+    ]))
+    elements.append(title_table)
+    elements.append(Spacer(1, 30))
+    elements.append(Paragraph(f"<b>Département:</b> {dept_name}", styles['SubInfo']))
+    elements.append(Paragraph(f"<b>Année Universitaire:</b> 2025/2026", styles['SubInfo']))
+    elements.append(Paragraph(f"<b>Semestre:</b> S1", styles['SubInfo']))
+    elements.append(Spacer(1, 30))
+    
+    # Liste des formations
+    elements.append(Paragraph("<b>Formations incluses:</b>", styles['SubInfo']))
+    for i, form_name in enumerate(formations_data.keys(), 1):
+        elements.append(Paragraph(f"  {i}. {form_name}", styles['Normal']))
+    
+    elements.append(PageBreak())
+    
+    # Pour chaque formation
     for formation_name, data in formations_data.items():
         niveau = data.get('niveau', '')
         examens = data.get('exams', [])
         
-        # En-tête
-        elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
-        elements.append(Paragraph(f"Département: {dept_name}", styles['Normal']))
-        elements.append(Spacer(1, 10))
+        if not examens:
+            continue
         
-        # Titre formation
-        title_table = Table([[f"PLANNING - {formation_name}"]], colWidths=[16*cm])
-        title_table.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2C3E50')),
-            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, -1), 11),
-            ('TOPPADDING', (0, 0), (-1, -1), 8),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
-        ]))
-        elements.append(title_table)
-        elements.append(Spacer(1, 10))
+        # Grouper les examens par groupe
+        exams_by_group = {}
+        for exam in examens:
+            groupe = exam.get('groupe', 'G01')
+            if groupe not in exams_by_group:
+                exams_by_group[groupe] = []
+            exams_by_group[groupe].append(exam)
         
-        elements.append(Paragraph(f"<b>Niveau:</b> {niveau}", styles['SubInfo']))
-        elements.append(Spacer(1, 10))
-        
-        if examens:
-            table_data = [['Date', 'Horaire', 'Module', 'Groupe', 'Salle']]
-            for exam in examens:
+        # Pour chaque groupe de cette formation
+        for groupe in sorted(exams_by_group.keys()):
+            group_exams = exams_by_group[groupe]
+            
+            # En-tête de page
+            elements.append(Paragraph("Université M'Hamed Bougara - Faculté des Sciences", 
+                                      ParagraphStyle('SmallHeader', fontSize=9, textColor=colors.grey, alignment=TA_CENTER)))
+            elements.append(Spacer(1, 5))
+            
+            # Titre formation
+            formation_title = Table([[f"{formation_name}"]], colWidths=[16*cm])
+            formation_title.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#004E89')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 12),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            elements.append(formation_title)
+            elements.append(Spacer(1, 5))
+            
+            # Sous-titre groupe
+            groupe_title = Table([[f"GROUPE: {groupe}"]], colWidths=[16*cm])
+            groupe_title.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#3498DB')),
+                ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, -1), 11),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+            ]))
+            elements.append(groupe_title)
+            elements.append(Spacer(1, 10))
+            
+            # Infos
+            elements.append(Paragraph(f"<b>Niveau:</b> {niveau} | <b>Département:</b> {dept_name}", styles['SubInfo']))
+            elements.append(Spacer(1, 10))
+            
+            # Tableau des examens
+            table_data = [['Date', 'Horaire', 'Module', 'Salle']]
+            for exam in group_exams:
                 heure = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
                 module = format_module(exam.get('module_code'), exam.get('module_nom'))
                 table_data.append([
                     str(exam.get('date', '')),
                     heure,
                     module,
-                    str(exam.get('groupe', 'G01')),
                     str(exam.get('salle', ''))
                 ])
             
-            table = Table(table_data, colWidths=[2.5*cm, 2.5*cm, 5.5*cm, 2*cm, 2.5*cm])
+            table = Table(table_data, colWidths=[3*cm, 3*cm, 6.5*cm, 3.5*cm])
             table.setStyle(TableStyle([
-                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#34495E')),
                 ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
                 ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, 0), (-1, 0), 9),
-                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ECF0F1')),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8F9FA')),
                 ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
                 ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-                ('FONTSIZE', (0, 1), (-1, -1), 8),
-                ('TOPPADDING', (0, 0), (-1, -1), 5),
-                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+                ('FONTSIZE', (0, 1), (-1, -1), 9),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('ALIGN', (0, 1), (1, -1), 'CENTER'),
+                ('ALIGN', (2, 1), (2, -1), 'LEFT'),
+                ('ALIGN', (3, 1), (3, -1), 'CENTER'),
+                # Alternance de couleurs
+                *[('BACKGROUND', (0, i), (-1, i), colors.white) for i in range(2, len(table_data), 2)]
             ]))
             elements.append(table)
-        else:
-            elements.append(Paragraph("Aucun examen planifié", styles['Normal']))
-        
-        # Saut de page
-        from reportlab.platypus import PageBreak
-        elements.append(PageBreak())
+            
+            # Pied de section
+            elements.append(Spacer(1, 15))
+            elements.append(Paragraph(f"Total: {len(group_exams)} examens", 
+                                      ParagraphStyle('Total', fontSize=9, textColor=colors.grey)))
+            
+            # Décision intelligente: nouvelle page si plus de 8 examens ou si c'est le dernier groupe
+            # Sinon, on peut mettre 2 petits tableaux sur une page
+            if len(group_exams) > 8:
+                elements.append(PageBreak())
+            else:
+                elements.append(Spacer(1, 30))
+                # Vérifier si on a de la place pour le prochain
+                elements.append(PageBreak())  # Pour l'instant, toujours nouvelle page pour clarté
     
     # Pied de page final
     elements.append(Paragraph(f"Département {dept_name} - Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", 
