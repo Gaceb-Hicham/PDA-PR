@@ -421,3 +421,169 @@ def generate_formation_master_pdf(formation_code, formation_name, niveau, groupe
     doc.build(elements)
     buffer.seek(0)
     return buffer
+
+
+def generate_multi_group_pdf(formation_name, niveau, exams_by_group):
+    """
+    Génère un PDF multi-pages: une page par groupe
+    
+    Args:
+        formation_name: Nom de la formation
+        niveau: Niveau (L1, L2, M1, etc.)
+        exams_by_group: Dict {groupe: [list of exams]}
+    """
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+    styles = create_header_style()
+    elements = []
+    
+    for groupe, examens in exams_by_group.items():
+        # En-tête université
+        elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
+        elements.append(Paragraph("Faculté des Sciences", styles['Normal']))
+        elements.append(Spacer(1, 10))
+        
+        # Titre
+        title_table = Table([[f"PLANNING DES EXAMENS - {groupe}"]], colWidths=[16*cm])
+        title_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#004E89')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 12),
+            ('TOPPADDING', (0, 0), (-1, -1), 10),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
+        ]))
+        elements.append(title_table)
+        elements.append(Spacer(1, 10))
+        
+        # Info
+        elements.append(Paragraph(f"<b>Formation:</b> {formation_name}", styles['SubInfo']))
+        elements.append(Paragraph(f"<b>Niveau:</b> {niveau} | <b>Groupe:</b> {groupe}", styles['SubInfo']))
+        elements.append(Paragraph(f"<b>Année Universitaire:</b> 2025/2026", styles['SubInfo']))
+        elements.append(Spacer(1, 15))
+        
+        # Tableau
+        if examens:
+            table_data = [['Date', 'Horaire', 'Module', 'Salle']]
+            for exam in examens:
+                heure = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
+                module = format_module(exam.get('module_code'), exam.get('module_nom'))
+                table_data.append([
+                    str(exam.get('date', '')),
+                    heure,
+                    module,
+                    str(exam.get('salle', ''))
+                ])
+            
+            table = Table(table_data, colWidths=[3*cm, 3*cm, 7*cm, 3*cm])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#004E89')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 10),
+                ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#F8F9FA')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 8),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            elements.append(table)
+        
+        # Pied de page
+        elements.append(Spacer(1, 30))
+        elements.append(Paragraph(f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", 
+                                 ParagraphStyle('Footer', fontSize=8, textColor=colors.grey, alignment=TA_CENTER)))
+        
+        # Saut de page pour le groupe suivant
+        from reportlab.platypus import PageBreak
+        elements.append(PageBreak())
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
+
+def generate_department_pdf(dept_name, formations_data):
+    """
+    Génère un PDF pour tout un département: une section par formation
+    
+    Args:
+        dept_name: Nom du département
+        formations_data: Dict {formation_name: {'niveau': str, 'exams': [list]}}
+    """
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=2*cm, bottomMargin=2*cm)
+    styles = create_header_style()
+    elements = []
+    
+    for formation_name, data in formations_data.items():
+        niveau = data.get('niveau', '')
+        examens = data.get('exams', [])
+        
+        # En-tête
+        elements.append(Paragraph("Université M'Hamed Bougara", styles['UnivTitle']))
+        elements.append(Paragraph(f"Département: {dept_name}", styles['Normal']))
+        elements.append(Spacer(1, 10))
+        
+        # Titre formation
+        title_table = Table([[f"PLANNING - {formation_name}"]], colWidths=[16*cm])
+        title_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor('#2C3E50')),
+            ('TEXTCOLOR', (0, 0), (-1, -1), colors.white),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('FONTNAME', (0, 0), (-1, -1), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, -1), 11),
+            ('TOPPADDING', (0, 0), (-1, -1), 8),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 8),
+        ]))
+        elements.append(title_table)
+        elements.append(Spacer(1, 10))
+        
+        elements.append(Paragraph(f"<b>Niveau:</b> {niveau}", styles['SubInfo']))
+        elements.append(Spacer(1, 10))
+        
+        if examens:
+            table_data = [['Date', 'Horaire', 'Module', 'Groupe', 'Salle']]
+            for exam in examens:
+                heure = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
+                module = format_module(exam.get('module_code'), exam.get('module_nom'))
+                table_data.append([
+                    str(exam.get('date', '')),
+                    heure,
+                    module,
+                    str(exam.get('groupe', 'G01')),
+                    str(exam.get('salle', ''))
+                ])
+            
+            table = Table(table_data, colWidths=[2.5*cm, 2.5*cm, 5.5*cm, 2*cm, 2.5*cm])
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#2C3E50')),
+                ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+                ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, 0), (-1, 0), 9),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('BACKGROUND', (0, 1), (-1, -1), colors.HexColor('#ECF0F1')),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTSIZE', (0, 1), (-1, -1), 8),
+                ('TOPPADDING', (0, 0), (-1, -1), 5),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ]))
+            elements.append(table)
+        else:
+            elements.append(Paragraph("Aucun examen planifié", styles['Normal']))
+        
+        # Saut de page
+        from reportlab.platypus import PageBreak
+        elements.append(PageBreak())
+    
+    # Pied de page final
+    elements.append(Paragraph(f"Département {dept_name} - Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')}", 
+                             ParagraphStyle('Footer', fontSize=8, textColor=colors.grey, alignment=TA_CENTER)))
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
+
