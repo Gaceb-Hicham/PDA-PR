@@ -238,7 +238,10 @@ elif "Configuration" in page:
 elif "Saisie" in page:
     st.title("📝 Saisie des Données")
     
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["🏛️ Départements", "📚 Formations", "👨‍🏫 Professeurs", "🏢 Salles", "📖 Modules"])
+    tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+        "🏛️ Départements", "📚 Formations", "👨‍🏫 Professeurs", 
+        "🏢 Salles", "📖 Modules", "👨‍🎓 Étudiants", "📝 Inscriptions"
+    ])
     
     # --- DÉPARTEMENTS ---
     with tab1:
@@ -416,6 +419,140 @@ elif "Saisie" in page:
                                   VALUES (%s, %s, %s, %s, %s, %s)""",
                                (code, nom, credits, form_id, semestre, credits/2))
                         st.success(f"✅ Module '{nom}' créé!")
+                        st.cache_data.clear()
+                        st.rerun()
+        else:
+            st.warning("Créez d'abord une formation")
+    
+    # --- ÉTUDIANTS ---
+    with tab6:
+        st.subheader("👨‍🎓 Étudiants")
+        
+        # Afficher les étudiants par formation
+        formations = get_formations()
+        if formations:
+            sel_form = st.selectbox("Filtrer par formation", ["Toutes"] + [f['nom'] for f in formations], key="etud_filter")
+            
+            if sel_form == "Toutes":
+                etudiants = q("""
+                    SELECT e.matricule, e.nom, e.prenom, e.groupe, f.nom as formation
+                    FROM etudiants e
+                    JOIN formations f ON e.formation_id = f.id
+                    ORDER BY f.nom, e.groupe, e.nom
+                    LIMIT 100
+                """)
+            else:
+                form_id = next(f['id'] for f in formations if f['nom'] == sel_form)
+                etudiants = q("""
+                    SELECT e.matricule, e.nom, e.prenom, e.groupe, f.nom as formation
+                    FROM etudiants e
+                    JOIN formations f ON e.formation_id = f.id
+                    WHERE e.formation_id = %s
+                    ORDER BY e.groupe, e.nom
+                    LIMIT 100
+                """, (form_id,))
+            
+            if etudiants:
+                df = pd.DataFrame([{
+                    'Matricule': e['matricule'],
+                    'Nom': e['nom'],
+                    'Prénom': e['prenom'],
+                    'Groupe': e['groupe'] or 'G01',
+                    'Formation': e['formation']
+                } for e in etudiants])
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                st.caption(f"Affichage limité à 100 étudiants")
+            else:
+                st.info("Aucun étudiant trouvé")
+        
+        st.subheader("➕ Ajouter un Étudiant")
+        if formations:
+            with st.form("etudiant_form"):
+                c1, c2 = st.columns(2)
+                nom = c1.text_input("Nom", placeholder="AMRANI")
+                prenom = c2.text_input("Prénom", placeholder="Mohamed")
+                
+                c3, c4 = st.columns(2)
+                form_sel = c3.selectbox("Formation", [f['nom'] for f in formations], key="etud_form")
+                groupe = c4.text_input("Groupe", "G01", help="Ex: G01, G02, G03...")
+                
+                promo = st.number_input("Année de promotion", min_value=2020, max_value=2030, value=2025)
+                
+                if st.form_submit_button("✅ Ajouter", type="primary"):
+                    if nom and prenom:
+                        form_id = next(f['id'] for f in formations if f['nom'] == form_sel)
+                        matricule = f"E{form_id:04d}{len(etudiants) if etudiants else 0:04d}"
+                        insert("""INSERT INTO etudiants (matricule, nom, prenom, formation_id, groupe, promo)
+                                  VALUES (%s, %s, %s, %s, %s, %s)""",
+                               (matricule, nom, prenom, form_id, groupe, promo))
+                        st.success(f"✅ Étudiant '{prenom} {nom}' créé avec matricule {matricule}!")
+                        st.cache_data.clear()
+                        st.rerun()
+        else:
+            st.warning("Créez d'abord une formation")
+    
+    # --- INSCRIPTIONS ---
+    with tab7:
+        st.subheader("📝 Inscriptions aux Modules")
+        
+        st.info("""
+        **Comment fonctionnent les examens?**
+        1. Chaque module inscrit génère un examen lors de la génération de l'EDT
+        2. Les étudiants sont automatiquement inscrits à tous les modules de leur formation
+        3. Lors de la génération, les groupes d'une même formation passent le même examen, mais dans des salles différentes
+        """)
+        
+        formations = get_formations()
+        if formations:
+            sel_form = st.selectbox("Formation", [f['nom'] for f in formations], key="inscr_form")
+            form_id = next(f['id'] for f in formations if f['nom'] == sel_form)
+            
+            # Stats inscriptions
+            stats = q("""
+                SELECT 
+                    (SELECT COUNT(*) FROM etudiants WHERE formation_id = %s) as nb_etudiants,
+                    (SELECT COUNT(*) FROM modules WHERE formation_id = %s) as nb_modules,
+                    (SELECT COUNT(*) FROM inscriptions i 
+                     JOIN modules m ON i.module_id = m.id 
+                     WHERE m.formation_id = %s) as nb_inscriptions
+            """, (form_id, form_id, form_id), fetch='one')
+            
+            if stats:
+                c1, c2, c3 = st.columns(3)
+                c1.metric("Étudiants", stats['nb_etudiants'])
+                c2.metric("Modules", stats['nb_modules'])
+                c3.metric("Inscriptions", stats['nb_inscriptions'])
+            
+            st.divider()
+            
+            # Bouton pour inscrire tous les étudiants à tous les modules
+            st.subheader("⚡ Inscription Automatique")
+            st.warning("Cette action inscrit TOUS les étudiants de cette formation à TOUS ses modules S1")
+            
+            if st.button("📝 Inscrire tous les étudiants aux modules S1", type="primary"):
+                with st.spinner("Inscription en cours..."):
+                    # Récupérer les étudiants et modules
+                    etudiants = q("SELECT id FROM etudiants WHERE formation_id = %s", (form_id,))
+                    modules = q("SELECT id FROM modules WHERE formation_id = %s AND semestre = 'S1'", (form_id,))
+                    
+                    if not etudiants:
+                        st.error("Aucun étudiant dans cette formation")
+                    elif not modules:
+                        st.error("Aucun module S1 dans cette formation")
+                    else:
+                        count = 0
+                        for etud in etudiants:
+                            for mod in modules:
+                                try:
+                                    insert("""INSERT IGNORE INTO inscriptions 
+                                              (etudiant_id, module_id, annee_universitaire, statut)
+                                              VALUES (%s, %s, '2025/2026', 'INSCRIT')""",
+                                           (etud['id'], mod['id']))
+                                    count += 1
+                                except:
+                                    pass
+                        
+                        st.success(f"✅ {count} inscriptions créées!")
                         st.cache_data.clear()
                         st.rerun()
         else:
