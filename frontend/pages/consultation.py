@@ -1,5 +1,6 @@
 """
 Page Consultation - Vue Étudiant/Professeur
+Optimisée avec cache
 """
 import streamlit as st
 import pandas as pd
@@ -9,6 +10,45 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
 from database import execute_query
+
+
+@st.cache_data(ttl=300)
+def get_formations_list():
+    """Cache les formations"""
+    return execute_query("""
+        SELECT f.id, f.nom, f.niveau, d.nom as dept
+        FROM formations f
+        JOIN departements d ON f.dept_id = d.id
+        ORDER BY d.nom, f.niveau, f.nom
+        LIMIT 200
+    """) or []
+
+
+@st.cache_data(ttl=300)
+def get_professors_list():
+    """Cache les professeurs"""
+    return execute_query("""
+        SELECT p.id, p.nom, p.prenom, d.nom as dept
+        FROM professeurs p
+        JOIN departements d ON p.dept_id = d.id
+        ORDER BY d.nom, p.nom
+        LIMIT 500
+    """) or []
+
+
+def format_time(t):
+    """Formate un timedelta ou time en HH:MM"""
+    if t is None:
+        return ""
+    if hasattr(t, 'strftime'):
+        return t.strftime('%H:%M')
+    # Pour timedelta (0 days 15:30:00)
+    s = str(t)
+    if 'day' in s:
+        parts = s.split(' ')
+        if len(parts) >= 2:
+            s = parts[-1]
+    return s[:5] if len(s) >= 5 else s
 
 
 def render_consultation():
@@ -34,13 +74,7 @@ def render_student_view():
     """Vue étudiant"""
     st.subheader("👨‍🎓 Mon Planning d'Examens")
     
-    # Sélection de la formation
-    formations = execute_query("""
-        SELECT f.id, f.nom, f.niveau, d.nom as dept
-        FROM formations f
-        JOIN departements d ON f.dept_id = d.id
-        ORDER BY d.nom, f.niveau, f.nom
-    """)
+    formations = get_formations_list()
     
     if not formations:
         st.warning("Aucune formation trouvée")
@@ -52,15 +86,13 @@ def render_student_view():
     
     session_id = 1
     
-    # Récupérer les examens
+    # Récupérer les examens avec horaires formatés en SQL
     examens = execute_query("""
         SELECT 
             e.date_examen as Date,
-            ch.libelle as Créneau,
-            ch.heure_debut as Début,
-            ch.heure_fin as Fin,
+            CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) as Horaire,
             m.code as Code,
-            m.nom as Module,
+            CONCAT(m.nom, ' (', m.code, ')') as Module,
             l.nom as Salle,
             l.batiment as Bâtiment
         FROM examens e
@@ -68,8 +100,9 @@ def render_student_view():
         JOIN formations f ON m.formation_id = f.id
         JOIN lieu_examen l ON e.salle_id = l.id
         JOIN creneaux_horaires ch ON e.creneau_id = ch.id
-        WHERE f.id = %s AND e.session_id = %s AND m.semestre = 'S1'
+        WHERE f.id = %s AND e.session_id = %s
         ORDER BY e.date_examen, ch.ordre
+        LIMIT 100
     """, (formation_id, session_id))
     
     if examens:
@@ -87,8 +120,8 @@ def render_student_view():
                     col1, col2 = st.columns([3, 1])
                     with col1:
                         st.markdown(f"""
-                        **{exam['Code']}** - {exam['Module']}  
-                        🕐 {exam['Créneau']} ({exam['Début']} - {exam['Fin']})
+                        **{exam['Module']}**  
+                        🕐 {exam['Horaire']}
                         """)
                     with col2:
                         st.markdown(f"📍 {exam['Salle']}")
@@ -105,13 +138,7 @@ def render_professor_view():
     """Vue professeur"""
     st.subheader("👨‍🏫 Mes Surveillances")
     
-    # Sélection du professeur
-    profs = execute_query("""
-        SELECT p.id, p.nom, p.prenom, d.nom as dept
-        FROM professeurs p
-        JOIN departements d ON p.dept_id = d.id
-        ORDER BY d.nom, p.nom
-    """)
+    profs = get_professors_list()
     
     if not profs:
         st.warning("Aucun professeur trouvé")
@@ -123,13 +150,11 @@ def render_professor_view():
     
     session_id = 1
     
-    # Récupérer les surveillances
+    # Récupérer les surveillances avec horaires formatés en SQL
     surveillances = execute_query("""
         SELECT 
             e.date_examen as Date,
-            ch.libelle as Créneau,
-            ch.heure_debut as Début,
-            ch.heure_fin as Fin,
+            CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) as Horaire,
             m.code as Code,
             m.nom as Module,
             l.nom as Salle,
@@ -141,6 +166,7 @@ def render_professor_view():
         JOIN creneaux_horaires ch ON e.creneau_id = ch.id
         WHERE s.professeur_id = %s AND e.session_id = %s
         ORDER BY e.date_examen, ch.ordre
+        LIMIT 100
     """, (prof_id, session_id))
     
     if surveillances:

@@ -28,7 +28,8 @@ def detect_student_conflicts(session_id: int) -> List[Dict]:
 def detect_room_conflicts(session_id: int) -> List[Dict]:
     """Détecte les doubles réservations de salles"""
     return execute_query("""
-        SELECT l.nom AS salle, ex1.date_examen, ch.libelle AS creneau,
+        SELECT l.nom AS salle, ex1.date_examen, 
+               CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) AS horaire,
                m1.code AS module1, m2.code AS module2
         FROM examens ex1
         JOIN examens ex2 ON ex1.salle_id = ex2.salle_id 
@@ -38,7 +39,7 @@ def detect_room_conflicts(session_id: int) -> List[Dict]:
         JOIN creneaux_horaires ch ON ex1.creneau_id = ch.id
         JOIN modules m1 ON ex1.module_id = m1.id
         JOIN modules m2 ON ex2.module_id = m2.id
-        WHERE ex1.session_id = %s
+        WHERE ex1.session_id = %s LIMIT 100
     """, (session_id,))
 
 

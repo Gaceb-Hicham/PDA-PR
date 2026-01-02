@@ -154,7 +154,9 @@ def render_dept_exams(dept_id):
     session_id = 1
     
     examens = execute_query("""
-        SELECT e.date_examen, ch.libelle as creneau, m.code, m.nom as module,
+        SELECT e.date_examen, 
+               CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) as horaire,
+               m.code, m.nom as module,
                l.nom as salle, e.nb_etudiants_prevus as etudiants
         FROM examens e
         JOIN modules m ON e.module_id = m.id
@@ -163,11 +165,12 @@ def render_dept_exams(dept_id):
         JOIN creneaux_horaires ch ON e.creneau_id = ch.id
         WHERE f.dept_id = %s AND e.session_id = %s
         ORDER BY e.date_examen, ch.ordre
+        LIMIT 100
     """, (dept_id, session_id))
     
     if examens:
         df = pd.DataFrame(examens)
-        df.columns = ['Date', 'Créneau', 'Code', 'Module', 'Salle', 'Étudiants']
+        df.columns = ['Date', 'Horaire', 'Code', 'Module', 'Salle', 'Étudiants']
         st.dataframe(df, use_container_width=True, hide_index=True)
         
         # Export

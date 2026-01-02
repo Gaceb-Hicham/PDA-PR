@@ -152,7 +152,7 @@ def render_current_planning():
     query = """
         SELECT 
             e.date_examen AS Date,
-            ch.libelle AS Créneau,
+            CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) AS Horaire,
             m.code AS 'Code Module',
             m.nom AS Module,
             f.nom AS Formation,

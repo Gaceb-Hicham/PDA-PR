@@ -64,7 +64,8 @@ def run_benchmarks():
             GROUP BY d.id
         """, None),
         ("Planning examens", """
-            SELECT e.*, m.nom, l.nom, ch.libelle
+            SELECT e.*, m.nom, l.nom, 
+                   CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) as horaire
             FROM examens e
             JOIN modules m ON e.module_id = m.id
             JOIN lieu_examen l ON e.salle_id = l.id

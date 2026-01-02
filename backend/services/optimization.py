@@ -434,7 +434,7 @@ def detect_room_conflicts(session_id: int) -> List[Dict]:
         SELECT 
             l.nom AS salle,
             ex1.date_examen,
-            ch.libelle AS creneau,
+            CONCAT(TIME_FORMAT(ch.heure_debut, '%H:%i'), ' - ', TIME_FORMAT(ch.heure_fin, '%H:%i')) AS horaire,
             m1.nom AS module1,
             m2.nom AS module2
         FROM examens ex1

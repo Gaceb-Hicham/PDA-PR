@@ -1,8 +1,9 @@
 """
 Module de connexion et gestion de la base de données MySQL
+Version optimisée avec connection pooling pour performance
 """
 import mysql.connector
-from mysql.connector import Error
+from mysql.connector import Error, pooling
 import logging
 from typing import Optional, List, Dict, Any
 import sys
@@ -11,24 +12,48 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import DB_CONFIG
 
-# Configuration du logging
-logging.basicConfig(level=logging.INFO)
+# Configuration du logging - niveau WARNING pour réduire les logs
+logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
+
+# ============================================================================
+# CONNECTION POOL - UNE SEULE INSTANCE GLOBALE
+# ============================================================================
+
+_connection_pool = None
+
+def get_pool():
+    """Retourne le pool de connexions (créé une seule fois)"""
+    global _connection_pool
+    if _connection_pool is None:
+        try:
+            _connection_pool = pooling.MySQLConnectionPool(
+                pool_name="exam_pool",
+                pool_size=5,  # 5 connexions réutilisables
+                pool_reset_session=True,
+                **DB_CONFIG
+            )
+            logger.info("Pool de connexions créé avec succès")
+        except Error as e:
+            logger.error(f"Erreur création pool: {e}")
+            raise
+    return _connection_pool
 
 
 def get_connection():
-    """Crée une nouvelle connexion à la base de données"""
+    """Obtient une connexion depuis le pool"""
     try:
-        conn = mysql.connector.connect(**DB_CONFIG)
-        return conn
+        return get_pool().get_connection()
     except Error as e:
-        logger.error(f"Erreur de connexion: {e}")
-        raise
+        # Fallback: connexion directe si pool échoue
+        logger.warning(f"Pool échoué, connexion directe: {e}")
+        return mysql.connector.connect(**DB_CONFIG)
 
 
 def execute_query(query: str, params: tuple = None, fetch: str = 'all') -> Any:
     """
     Exécute une requête SQL et retourne les résultats
+    Optimisé avec pool de connexions
     
     Args:
         query: Requête SQL
@@ -42,7 +67,7 @@ def execute_query(query: str, params: tuple = None, fetch: str = 'all') -> Any:
     cursor = None
     try:
         conn = get_connection()
-        cursor = conn.cursor(dictionary=True)
+        cursor = conn.cursor(dictionary=True, buffered=True)
         cursor.execute(query, params or ())
         
         if fetch == 'all':
@@ -59,13 +84,22 @@ def execute_query(query: str, params: tuple = None, fetch: str = 'all') -> Any:
     except Error as e:
         logger.error(f"Erreur SQL: {e}")
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except:
+                pass
         raise
     finally:
         if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()  # Retourne la connexion au pool
+            except:
+                pass
 
 
 def execute_many(query: str, params_list: List[tuple]) -> int:
@@ -81,13 +115,22 @@ def execute_many(query: str, params_list: List[tuple]) -> int:
     except Error as e:
         logger.error(f"Erreur SQL: {e}")
         if conn:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except:
+                pass
         raise
     finally:
         if cursor:
-            cursor.close()
-        if conn and conn.is_connected():
-            conn.close()
+            try:
+                cursor.close()
+            except:
+                pass
+        if conn:
+            try:
+                conn.close()
+            except:
+                pass
 
 
 class get_cursor:
@@ -99,18 +142,30 @@ class get_cursor:
     
     def __enter__(self):
         self.conn = get_connection()
-        self.cursor = self.conn.cursor(dictionary=self.dictionary)
+        self.cursor = self.conn.cursor(dictionary=self.dictionary, buffered=True)
         return self.cursor
     
     def __exit__(self, exc_type, exc_val, exc_tb):
         if exc_type:
-            self.conn.rollback()
+            try:
+                self.conn.rollback()
+            except:
+                pass
         else:
-            self.conn.commit()
+            try:
+                self.conn.commit()
+            except:
+                pass
         if self.cursor:
-            self.cursor.close()
-        if self.conn and self.conn.is_connected():
-            self.conn.close()
+            try:
+                self.cursor.close()
+            except:
+                pass
+        if self.conn:
+            try:
+                self.conn.close()
+            except:
+                pass
         return False
 
 
@@ -181,8 +236,8 @@ def get_conflits_actifs(session_id: int = None) -> List[Dict]:
     """
     if session_id:
         query += " AND e1.session_id = %s"
-        return execute_query(query + " ORDER BY c.severite, c.created_at DESC", (session_id,))
-    return execute_query(query + " ORDER BY c.severite, c.created_at DESC")
+        return execute_query(query + " ORDER BY c.severite, c.created_at DESC LIMIT 100", (session_id,))
+    return execute_query(query + " ORDER BY c.severite, c.created_at DESC LIMIT 100")
 
 
 # ============================================================================
