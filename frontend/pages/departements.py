@@ -62,8 +62,8 @@ def render_departments():
     
     st.divider()
     
-    # Tabs
-    tab1, tab2, tab3 = st.tabs(["Formations", "Professeurs", "Examens"])
+    # Tabs avec Étudiants et Salles
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📚 Formations", "👨‍🏫 Professeurs", "👨‍🎓 Étudiants", "🏢 Salles", "📅 Examens"])
     
     with tab1:
         forms = q("""
@@ -80,6 +80,8 @@ def render_departments():
             df = pd.DataFrame(forms)
             df.columns = ['Formation', 'Code', 'Niveau', 'Étudiants', 'Modules']
             st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucune formation")
     
     with tab2:
         profs = q("""
@@ -95,18 +97,64 @@ def render_departments():
             df = pd.DataFrame(profs)
             df.columns = ['Nom', 'Prénom', 'Grade', 'Spécialité', 'Surveillances']
             st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucun professeur")
     
     with tab3:
+        # Étudiants du département
+        etudiants = q("""
+            SELECT e.matricule, e.nom, e.prenom, COALESCE(e.groupe, 'G01') as groupe,
+                   f.nom as formation, f.niveau
+            FROM etudiants e
+            JOIN formations f ON e.formation_id = f.id
+            WHERE f.dept_id = %s
+            ORDER BY f.nom, e.groupe, e.nom
+            LIMIT 100
+        """, (did,))
+        
+        if etudiants:
+            df = pd.DataFrame(etudiants)
+            df.columns = ['Matricule', 'Nom', 'Prénom', 'Groupe', 'Formation', 'Niveau']
+            st.dataframe(df, use_container_width=True, hide_index=True)
+            st.caption(f"{len(etudiants)} étudiants affichés (max 100)")
+        else:
+            st.info("Aucun étudiant")
+    
+    with tab4:
+        # Salles utilisées par ce département
+        salles = q("""
+            SELECT DISTINCT l.nom, l.code, l.type, l.capacite,
+                   (SELECT COUNT(*) FROM examens e2 
+                    JOIN modules m2 ON e2.module_id = m2.id 
+                    JOIN formations f2 ON m2.formation_id = f2.id 
+                    WHERE e2.salle_id = l.id AND f2.dept_id = %s) as examens
+            FROM lieu_examen l
+            JOIN examens e ON e.salle_id = l.id
+            JOIN modules m ON e.module_id = m.id
+            JOIN formations f ON m.formation_id = f.id
+            WHERE f.dept_id = %s
+            ORDER BY l.type, l.capacite DESC
+            LIMIT 50
+        """, (did, did))
+        
+        if salles:
+            df = pd.DataFrame(salles)
+            df.columns = ['Salle', 'Code', 'Type', 'Capacité', 'Examens']
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        else:
+            st.info("Aucune salle utilisée par ce département")
+    
+    with tab5:
         exams = q("""
             SELECT e.date_examen as Date,
                    CONCAT(TIME_FORMAT(ch.heure_debut,'%H:%i'),' - ',TIME_FORMAT(ch.heure_fin,'%H:%i')) as Horaire,
-                   m.code as Code, m.nom as Module, l.nom as Salle
+                   m.code as Code, m.nom as Module, COALESCE(e.groupe, 'G01') as Groupe, l.nom as Salle
             FROM examens e
             JOIN modules m ON e.module_id = m.id
             JOIN formations f ON m.formation_id = f.id
             JOIN lieu_examen l ON e.salle_id = l.id
             JOIN creneaux_horaires ch ON e.creneau_id = ch.id
-            WHERE f.dept_id = %s AND e.session_id = 1
+            WHERE f.dept_id = %s
             ORDER BY e.date_examen, ch.ordre
             LIMIT 50
         """, (did,))

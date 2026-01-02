@@ -643,13 +643,16 @@ elif "Génération" in page:
 
 
 # ============================================================================
-# PAGE: PLANNINGS - Avec filtrage par groupe
+# PAGE: PLANNINGS - Avec filtrage par groupe et département
 # ============================================================================
 
 elif "Plannings" in page:
     st.title("📊 Consultation des Plannings")
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📚 Par Formation/Groupe", "🏛️ Par Département", "👨‍🏫 Par Professeur", "🏢 Par Salle"])
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📚 Par Formation/Groupe", "🏛️ Par Département", 
+        "👨‍🏫 Par Professeur", "🏢 Par Salle"
+    ])
     
     # --- Par Formation/Groupe ---
     with tab1:
@@ -749,10 +752,19 @@ elif "Plannings" in page:
     # --- Par Professeur ---
     with tab3:
         st.subheader("👨‍🏫 Planning Professeur")
+        
+        # Filtrage par département
+        depts = get_depts()
+        c1, c2 = st.columns([1, 2])
+        dept_filter = c1.selectbox("Département", ["Tous"] + [d['nom'] for d in depts], key="prof_dept_filter")
+        
         profs = get_profs()
+        if dept_filter != "Tous":
+            profs = [p for p in profs if p['dept'] == dept_filter]
+        
         if profs:
-            sel = st.selectbox("Professeur", [f"{p['prenom']} {p['nom']} ({p['dept']})" for p in profs], key="plan_prof")
-            prof_id = next(p['id'] for p in profs if f"{p['prenom']} {p['nom']} ({p['dept']})" == sel)
+            sel = c2.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs], key="plan_prof")
+            prof_id = next(p['id'] for p in profs if f"{p['prenom']} {p['nom']}" == sel)
             
             survs = q("""
                 SELECT e.date_examen as Date,
@@ -772,13 +784,25 @@ elif "Plannings" in page:
                 st.dataframe(pd.DataFrame(survs), use_container_width=True, hide_index=True)
             else:
                 st.info("Aucune surveillance")
+        else:
+            st.warning("Aucun professeur dans ce département")
     
     # --- Par Salle ---
     with tab4:
         st.subheader("🏢 Planning Salle")
+        
+        # Filtrage par type de salle
         salles = get_salles()
+        types_salles = list(set(s['type'] for s in salles if s.get('type')))
+        
+        c1, c2 = st.columns([1, 2])
+        type_filter = c1.selectbox("Type de salle", ["Tous"] + types_salles, key="salle_type_filter")
+        
+        if type_filter != "Tous":
+            salles = [s for s in salles if s.get('type') == type_filter]
+        
         if salles:
-            sel = st.selectbox("Salle", [f"{s['code']} - {s['nom']} ({s['capacite']} places)" for s in salles], key="plan_salle")
+            sel = c2.selectbox("Salle", [f"{s['code']} - {s['nom']} ({s['capacite']} places)" for s in salles], key="plan_salle")
             salle_id = next(s['id'] for s in salles if f"{s['code']} - {s['nom']} ({s['capacite']} places)" == sel)
             
             exams = q("""
@@ -798,6 +822,8 @@ elif "Plannings" in page:
                 st.dataframe(pd.DataFrame(exams), use_container_width=True, hide_index=True)
             else:
                 st.info("Aucun examen")
+        else:
+            st.warning("Aucune salle de ce type")
 
 
 # ============================================================================
@@ -937,12 +963,21 @@ elif "PDF" in page:
                         else:
                             st.warning("Aucun examen planifié")
     
-    # --- Professeurs ---
+    # --- Professeurs avec filtre département ---
     with tab3:
         st.subheader("👨‍🏫 Planning Professeur")
+        
+        # Filtre département
+        depts = get_depts()
+        c1, c2 = st.columns([1, 2])
+        dept_filter = c1.selectbox("Département", ["Tous"] + [d['nom'] for d in depts], key="pdf_prof_dept")
+        
         profs = get_profs()
+        if dept_filter != "Tous":
+            profs = [p for p in profs if p['dept'] == dept_filter]
+        
         if profs:
-            sel = st.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs], key="pdf_prof")
+            sel = c2.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs], key="pdf_prof")
             prof_data = next(p for p in profs if f"{p['prenom']} {p['nom']}" == sel)
             
             if st.button("📄 Générer PDF Professeur", type="primary"):
@@ -968,14 +1003,26 @@ elif "PDF" in page:
                         st.error(f"Erreur: {e}")
                 else:
                     st.warning("Aucune surveillance")
+        else:
+            st.warning("Aucun professeur dans ce département")
     
-    # --- Salles ---
+    # --- Salles avec filtre type ---
     with tab4:
         st.subheader("🏢 Planning Salle")
+        
+        # Filtre par type
         salles = get_salles()
+        types_salles = list(set(s['type'] for s in salles if s.get('type')))
+        
+        c1, c2 = st.columns([1, 2])
+        type_filter = c1.selectbox("Type", ["Tous"] + types_salles, key="pdf_salle_type")
+        
+        if type_filter != "Tous":
+            salles = [s for s in salles if s.get('type') == type_filter]
+        
         if salles:
-            sel = st.selectbox("Salle", [f"{s['code']} - {s['nom']}" for s in salles], key="pdf_salle")
-            salle_data = next(s for s in salles if f"{s['code']} - {s['nom']}" == sel)
+            sel = c2.selectbox("Salle", [f"{s['code']} - {s['nom']} ({s['capacite']} pl.)" for s in salles], key="pdf_salle")
+            salle_data = next(s for s in salles if f"{s['code']} - {s['nom']} ({s['capacite']} pl.)" == sel)
             
             if st.button("📄 Générer PDF Salle", type="primary"):
                 exams = q("""
@@ -999,4 +1046,6 @@ elif "PDF" in page:
                         st.error(f"Erreur: {e}")
                 else:
                     st.warning("Aucun examen")
+        else:
+            st.warning("Aucune salle de ce type")
 
