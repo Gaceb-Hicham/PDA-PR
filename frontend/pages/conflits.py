@@ -1,5 +1,6 @@
 """
-Page Conflits - Détection et gestion des conflits
+Page Conflits - VERSION OPTIMISÉE
+Utilise des requêtes COUNT() rapides et du cache
 """
 import streamlit as st
 import pandas as pd
@@ -8,156 +9,142 @@ import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
 
-from services.conflicts import (
-    detect_student_conflicts, detect_room_conflicts,
-    detect_professor_overload, detect_capacity_overflow, get_conflict_stats
-)
 from database import execute_query
 
 
+def q(sql, params=None):
+    try:
+        return execute_query(sql, params) or []
+    except:
+        return []
+
+
+@st.cache_data(ttl=120)
+def get_conflict_counts(session_id):
+    """Compte les conflits rapidement avec COUNT()"""
+    result = q("""
+        SELECT 
+            (SELECT COUNT(*) FROM conflits c 
+             JOIN examens e ON c.examen1_id = e.id 
+             WHERE e.session_id = %s AND c.resolu = FALSE 
+             AND c.type_conflit = 'ETUDIANT') as student_conflicts,
+            (SELECT COUNT(*) FROM conflits c 
+             JOIN examens e ON c.examen1_id = e.id 
+             WHERE e.session_id = %s AND c.resolu = FALSE 
+             AND c.type_conflit = 'SALLE') as room_conflicts,
+            (SELECT COUNT(*) FROM conflits c 
+             JOIN examens e ON c.examen1_id = e.id 
+             WHERE e.session_id = %s AND c.resolu = FALSE 
+             AND c.type_conflit = 'PROFESSEUR') as prof_conflicts,
+            (SELECT COUNT(*) FROM examens e 
+             JOIN lieu_examen l ON e.salle_id = l.id 
+             WHERE e.session_id = %s AND e.nb_etudiants_prevus > l.capacite) as capacity_issues
+    """, (session_id, session_id, session_id, session_id))
+    return result[0] if result else {'student_conflicts': 0, 'room_conflicts': 0, 'prof_conflicts': 0, 'capacity_issues': 0}
+
+
+@st.cache_data(ttl=120)
+def get_capacity_issues(session_id):
+    """Examens avec dépassement de capacité"""
+    return q("""
+        SELECT m.code, m.nom as module, l.nom as salle, l.capacite, e.nb_etudiants_prevus as etudiants
+        FROM examens e
+        JOIN modules m ON e.module_id = m.id
+        JOIN lieu_examen l ON e.salle_id = l.id
+        WHERE e.session_id = %s AND e.nb_etudiants_prevus > l.capacite
+        LIMIT 50
+    """, (session_id,))
+
+
 def render_conflicts():
-    """Affiche la page de gestion des conflits"""
     st.header("⚠️ Détection et Gestion des Conflits")
     
     session_id = 1
     
-    # Résumé des conflits
+    # Résumé avec COUNT() rapide
     st.subheader("📊 Résumé")
     
-    col1, col2, col3, col4 = st.columns(4)
+    counts = get_conflict_counts(session_id)
     
-    with col1:
-        student_conflicts = detect_student_conflicts(session_id)
-        st.metric(
-            "👨‍🎓 Conflits Étudiants",
-            len(student_conflicts),
-            delta="2+ examens/jour" if student_conflicts else None,
-            delta_color="inverse"
-        )
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("👨‍🎓 Étudiants", counts['student_conflicts'], 
+              delta="2+ examens/jour" if counts['student_conflicts'] else None, delta_color="inverse")
+    c2.metric("🏛️ Salles", counts['room_conflicts'],
+              delta="Double réservation" if counts['room_conflicts'] else None, delta_color="inverse")
+    c3.metric("👨‍🏫 Professeurs", counts['prof_conflicts'],
+              delta=">3 surv/jour" if counts['prof_conflicts'] else None, delta_color="inverse")
+    c4.metric("📊 Capacité", counts['capacity_issues'],
+              delta="Salle insuffisante" if counts['capacity_issues'] else None, delta_color="inverse")
     
-    with col2:
-        room_conflicts = detect_room_conflicts(session_id)
-        st.metric(
-            "🏛️ Conflits Salles",
-            len(room_conflicts),
-            delta="Double réservation" if room_conflicts else None,
-            delta_color="inverse"
-        )
+    st.divider()
     
-    with col3:
-        prof_overload = detect_professor_overload(session_id)
-        st.metric(
-            "👨‍🏫 Surcharge Profs",
-            len(prof_overload),
-            delta=">3 surv/jour" if prof_overload else None,
-            delta_color="inverse"
-        )
-    
-    with col4:
-        capacity_issues = detect_capacity_overflow(session_id)
-        st.metric(
-            "📊 Dépassement Capacité",
-            len(capacity_issues),
-            delta="Salle insuffisante" if capacity_issues else None,
-            delta_color="inverse"
-        )
-    
-    st.markdown("---")
-    
-    # Tabs pour les différents types de conflits
-    tab1, tab2, tab3, tab4 = st.tabs([
-        "👨‍🎓 Étudiants", 
-        "🏛️ Salles", 
-        "👨‍🏫 Professeurs",
-        "📊 Capacité"
-    ])
+    # Tabs
+    tab1, tab2, tab3, tab4 = st.tabs(["👨‍🎓 Étudiants", "🏛️ Salles", "👨‍🏫 Professeurs", "📊 Capacité"])
     
     with tab1:
-        render_student_conflicts(student_conflicts)
+        st.subheader("👨‍🎓 Conflits Étudiants")
+        if counts['student_conflicts'] > 0:
+            conflicts = q("""
+                SELECT c.description, c.severite
+                FROM conflits c
+                JOIN examens e ON c.examen1_id = e.id
+                WHERE e.session_id = %s AND c.resolu = FALSE AND c.type_conflit = 'ETUDIANT'
+                LIMIT 20
+            """, (session_id,))
+            if conflicts:
+                st.error(f"⚠️ {len(conflicts)} conflits")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
+            else:
+                st.success("✅ Aucun conflit")
+        else:
+            st.success("✅ Aucun conflit étudiant")
     
     with tab2:
-        render_room_conflicts(room_conflicts)
+        st.subheader("🏛️ Conflits Salles")
+        if counts['room_conflicts'] > 0:
+            conflicts = q("""
+                SELECT c.description, c.severite
+                FROM conflits c
+                JOIN examens e ON c.examen1_id = e.id
+                WHERE e.session_id = %s AND c.resolu = FALSE AND c.type_conflit = 'SALLE'
+                LIMIT 20
+            """, (session_id,))
+            if conflicts:
+                st.error(f"⚠️ {len(conflicts)} conflits")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
+            else:
+                st.success("✅ Aucun conflit")
+        else:
+            st.success("✅ Aucun conflit de salle")
     
     with tab3:
-        render_prof_conflicts(prof_overload)
+        st.subheader("👨‍🏫 Surcharge Professeurs")
+        if counts['prof_conflicts'] > 0:
+            conflicts = q("""
+                SELECT c.description, c.severite
+                FROM conflits c
+                JOIN examens e ON c.examen1_id = e.id
+                WHERE e.session_id = %s AND c.resolu = FALSE AND c.type_conflit = 'PROFESSEUR'
+                LIMIT 20
+            """, (session_id,))
+            if conflicts:
+                st.warning(f"⚠️ {len(conflicts)} surcharges")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
+            else:
+                st.success("✅ Aucune surcharge")
+        else:
+            st.success("✅ Aucune surcharge professeur")
     
     with tab4:
-        render_capacity_conflicts(capacity_issues)
-
-
-def render_student_conflicts(conflicts):
-    """Affiche les conflits étudiants"""
-    st.subheader("👨‍🎓 Étudiants avec plusieurs examens le même jour")
-    
-    if conflicts:
-        df = pd.DataFrame(conflicts)
-        df.columns = ['ID', 'Nom', 'Prénom', 'Date', 'Module 1', 'Module 2']
-        df = df.drop('ID', axis=1)
-        
-        st.error(f"⚠️ {len(conflicts)} conflits détectés!")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        st.markdown("""
-        **Actions recommandées:**
-        - Replanifier un des deux examens à une autre date
-        - Vérifier les inscriptions de l'étudiant
-        """)
-    else:
-        st.success("✅ Aucun conflit étudiant détecté")
-
-
-def render_room_conflicts(conflicts):
-    """Affiche les conflits de salles"""
-    st.subheader("🏛️ Doubles réservations de salles")
-    
-    if conflicts:
-        df = pd.DataFrame(conflicts)
-        st.error(f"⚠️ {len(conflicts)} conflits détectés!")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        st.markdown("""
-        **Actions recommandées:**
-        - Changer la salle d'un des examens
-        - Modifier l'horaire d'un examen
-        """)
-    else:
-        st.success("✅ Aucun conflit de salle détecté")
-
-
-def render_prof_conflicts(conflicts):
-    """Affiche les surcharges professeurs"""
-    st.subheader("👨‍🏫 Professeurs surchargés (>3 surveillances/jour)")
-    
-    if conflicts:
-        df = pd.DataFrame(conflicts)
-        st.warning(f"⚠️ {len(conflicts)} surcharges détectées!")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        st.markdown("""
-        **Actions recommandées:**
-        - Réassigner certaines surveillances
-        - Équilibrer la charge entre professeurs
-        """)
-    else:
-        st.success("✅ Aucune surcharge professeur détectée")
-
-
-def render_capacity_conflicts(conflicts):
-    """Affiche les dépassements de capacité"""
-    st.subheader("📊 Salles sous-dimensionnées")
-    
-    if conflicts:
-        df = pd.DataFrame(conflicts)
-        st.warning(f"⚠️ {len(conflicts)} dépassements détectés!")
-        st.dataframe(df, use_container_width=True, hide_index=True)
-        
-        st.markdown("""
-        **Actions recommandées:**
-        - Affecter une salle plus grande
-        - Diviser l'examen en plusieurs salles
-        """)
-    else:
-        st.success("✅ Aucun dépassement de capacité détecté")
+        st.subheader("📊 Dépassement Capacité")
+        capacity_issues = get_capacity_issues(session_id)
+        if capacity_issues:
+            st.warning(f"⚠️ {len(capacity_issues)} dépassements")
+            df = pd.DataFrame(capacity_issues)
+            df.columns = ['Code', 'Module', 'Salle', 'Capacité', 'Étudiants']
+            st.dataframe(df, hide_index=True, use_container_width=True)
+        else:
+            st.success("✅ Aucun dépassement de capacité")
 
 
 if __name__ == "__main__":
