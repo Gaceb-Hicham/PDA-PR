@@ -1,24 +1,40 @@
 """
 ExamPro - Module de Design Premium
 Fournit les styles CSS et composants pour toutes les pages
+Optimisé pour éviter le flash noir lors de la navigation
 """
 import streamlit as st
 import os
+
+# Cache CSS content at module level to avoid re-reading file
+_CSS_CACHE = None
+
+def _get_css_content():
+    """Cache le contenu CSS pour éviter la lecture répétée du fichier"""
+    global _CSS_CACHE
+    if _CSS_CACHE is None:
+        css_path = os.path.join(os.path.dirname(__file__), 'style.css')
+        if os.path.exists(css_path):
+            with open(css_path, 'r', encoding='utf-8') as f:
+                _CSS_CACHE = f.read()
+        else:
+            _CSS_CACHE = ""
+    return _CSS_CACHE
 
 
 def inject_premium_css():
     """Injecte le CSS premium dans n'importe quelle page Streamlit"""
     
-    # Load external CSS file if exists
-    css_path = os.path.join(os.path.dirname(__file__), 'style.css')
-    css_content = ""
-    if os.path.exists(css_path):
-        with open(css_path, 'r', encoding='utf-8') as f:
-            css_content = f.read()
+    css_content = _get_css_content()
     
-    # Additional page-specific styles
+    # Critical: Set background immediately to prevent white/black flash
     st.markdown(f"""
     <style>
+        /* CRITICAL: Instant background to prevent flash */
+        .stApp {{
+            background: #0F0F1A !important;
+        }}
+        
         {css_content}
         
         /* Additional styles for sub-pages */
@@ -103,25 +119,6 @@ def inject_premium_css():
             color: #64748B;
             text-transform: uppercase;
             letter-spacing: 1px;
-        }}
-        
-        /* Action buttons */
-        .action-btn {{
-            background: linear-gradient(135deg, #6366F1 0%, #EC4899 100%);
-            color: white;
-            padding: 1rem 2rem;
-            border-radius: 12px;
-            font-weight: 600;
-            display: inline-block;
-            text-align: center;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.35);
-        }}
-        
-        .action-btn:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 8px 25px rgba(99, 102, 241, 0.45);
         }}
         
         /* Info cards */
