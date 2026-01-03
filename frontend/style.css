@@ -13,25 +13,25 @@
     --success: #10B981;
     --warning: #F59E0B;
     --danger: #EF4444;
-    
+
     --bg-dark: #0F0F1A;
     --bg-card: rgba(30, 30, 50, 0.7);
     --bg-glass: rgba(255, 255, 255, 0.05);
     --border-glass: rgba(255, 255, 255, 0.1);
-    
+
     --text-primary: #F8FAFC;
     --text-secondary: #94A3B8;
     --text-muted: #64748B;
-    
+
     --gradient-primary: linear-gradient(135deg, #6366F1 0%, #EC4899 100%);
-    --gradient-card: linear-gradient(145deg, rgba(30,30,50,0.8) 0%, rgba(20,20,40,0.9) 100%);
+    --gradient-card: linear-gradient(145deg, rgba(30, 30, 50, 0.8) 0%, rgba(20, 20, 40, 0.9) 100%);
     --gradient-accent: linear-gradient(135deg, #F59E0B 0%, #EF4444 100%);
-    
-    --shadow-sm: 0 2px 8px rgba(0,0,0,0.3);
-    --shadow-md: 0 8px 24px rgba(0,0,0,0.4);
-    --shadow-lg: 0 16px 48px rgba(0,0,0,0.5);
+
+    --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
+    --shadow-md: 0 8px 24px rgba(0, 0, 0, 0.4);
+    --shadow-lg: 0 16px 48px rgba(0, 0, 0, 0.5);
     --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.3);
-    
+
     --radius-sm: 8px;
     --radius-md: 12px;
     --radius-lg: 20px;
@@ -41,7 +41,7 @@
 /* === GLOBAL STYLES === */
 .stApp {
     background: var(--bg-dark);
-    background-image: 
+    background-image:
         radial-gradient(ellipse at 20% 0%, rgba(99, 102, 241, 0.15) 0%, transparent 50%),
         radial-gradient(ellipse at 80% 100%, rgba(236, 72, 153, 0.1) 0%, transparent 50%);
 }
@@ -52,7 +52,7 @@
     border-right: 1px solid var(--border-glass);
 }
 
-[data-testid="stSidebar"] > div:first-child {
+[data-testid="stSidebar"]>div:first-child {
     padding-top: 1rem;
 }
 
@@ -67,6 +67,7 @@
 .sidebar-logo h1 {
     background: var(--gradient-primary);
     -webkit-background-clip: text;
+    background-clip: text;
     -webkit-text-fill-color: transparent;
     font-size: 1.75rem !important;
     font-weight: 800;
@@ -82,8 +83,44 @@
     letter-spacing: 2px;
 }
 
+/* Sidebar Collapse Button - Always Visible */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+    background: var(--gradient-primary) !important;
+    border-radius: 50% !important;
+    width: 32px !important;
+    height: 32px !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.4) !important;
+    z-index: 999999 !important;
+    position: fixed !important;
+    left: 10px !important;
+    top: 10px !important;
+}
+
+[data-testid="stSidebarCollapseButton"]:hover,
+[data-testid="collapsedControl"]:hover {
+    transform: scale(1.1) !important;
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.5) !important;
+}
+
+/* When sidebar is collapsed - show expand button */
+[data-testid="stSidebarCollapsedControl"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
+button[kind="headerNoPadding"] {
+    visibility: visible !important;
+    opacity: 1 !important;
+}
+
 /* Navigation Items */
-[data-testid="stSidebar"] .stRadio > div {
+[data-testid="stSidebar"] .stRadio>div {
     gap: 4px !important;
 }
 
@@ -215,7 +252,7 @@
 }
 
 /* === BUTTONS === */
-.stButton > button {
+.stButton>button {
     background: var(--gradient-primary) !important;
     border: none !important;
     border-radius: var(--radius-md) !important;
@@ -226,17 +263,17 @@
     box-shadow: 0 4px 14px rgba(99, 102, 241, 0.4) !important;
 }
 
-.stButton > button:hover {
+.stButton>button:hover {
     transform: translateY(-2px) !important;
     box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5) !important;
 }
 
-.stButton > button:active {
+.stButton>button:active {
     transform: translateY(0) !important;
 }
 
 /* Secondary Buttons */
-.stButton > button[kind="secondary"] {
+.stButton>button[kind="secondary"] {
     background: transparent !important;
     border: 2px solid var(--primary) !important;
     color: var(--primary) !important;
@@ -286,16 +323,16 @@
     border: 1px solid var(--border-glass);
 }
 
-.stDataFrame > div {
+.stDataFrame>div {
     background: var(--bg-card);
 }
 
 /* === FORMS === */
-.stTextInput > div > div > input,
-.stSelectbox > div > div,
-.stNumberInput > div > div > input,
-.stDateInput > div > div > input,
-.stTimeInput > div > div > input {
+.stTextInput>div>div>input,
+.stSelectbox>div>div,
+.stNumberInput>div>div>input,
+.stDateInput>div>div>input,
+.stTimeInput>div>div>input {
     background: var(--bg-glass) !important;
     border: 1px solid var(--border-glass) !important;
     border-radius: var(--radius-md) !important;
@@ -303,8 +340,8 @@
     transition: all 0.3s ease !important;
 }
 
-.stTextInput > div > div > input:focus,
-.stSelectbox > div > div:focus-within {
+.stTextInput>div>div>input:focus,
+.stSelectbox>div>div:focus-within {
     border-color: var(--primary) !important;
     box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.2) !important;
 }
@@ -366,6 +403,7 @@
         opacity: 0;
         transform: translateY(20px);
     }
+
     to {
         opacity: 1;
         transform: translateY(0);
@@ -373,13 +411,25 @@
 }
 
 @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
+
+    0%,
+    100% {
+        opacity: 1;
+    }
+
+    50% {
+        opacity: 0.7;
+    }
 }
 
 @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+    0% {
+        background-position: -200% 0;
+    }
+
+    100% {
+        background-position: 200% 0;
+    }
 }
 
 .animate-fade-in {
@@ -387,9 +437,17 @@
 }
 
 /* === HIDE STREAMLIT BRANDING === */
-#MainMenu {visibility: hidden;}
-footer {visibility: hidden;}
-header {visibility: hidden;}
+#MainMenu {
+    visibility: hidden;
+}
+
+footer {
+    visibility: hidden;
+}
+
+header {
+    visibility: hidden;
+}
 
 /* === SCROLLBAR === */
 ::-webkit-scrollbar {
@@ -423,7 +481,7 @@ hr {
     .main .block-container {
         padding: 1rem;
     }
-    
+
     .stat-card .value {
         font-size: 1.75rem;
     }

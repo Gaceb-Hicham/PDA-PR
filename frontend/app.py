@@ -397,9 +397,10 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
     
+    # Version footer - removed absolute positioning
     st.markdown("""
-    <div style="position: absolute; bottom: 1rem; left: 1rem; right: 1rem;">
-        <p style="color: #64748B; font-size: 0.7rem; text-align: center;">
+    <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
+        <p style="color: #64748B; font-size: 0.7rem; text-align: center; margin: 0;">
             v2.0 • Université Boumerdès
         </p>
     </div>
@@ -482,13 +483,17 @@ if "Dashboard" in page:
     with col1:
         st.markdown('<div class="section-title"><h2>⚡ Accès Rapide</h2></div>', unsafe_allow_html=True)
         
-        st.markdown("""
-        <div class="quick-grid">
-            <div class="quick-item"><div class="icon">📅</div><div class="label">Générer EDT</div></div>
-            <div class="quick-item"><div class="icon">📊</div><div class="label">Plannings</div></div>
-            <div class="quick-item"><div class="icon">📄</div><div class="label">Export PDF</div></div>
-        </div>
-        """, unsafe_allow_html=True)
+        # Functional Quick Access buttons
+        qa1, qa2, qa3 = st.columns(3)
+        with qa1:
+            if st.button("📅\nGénérer", use_container_width=True, key="qa_gen"):
+                st.info("➡️ Allez dans 🚀 Génération dans le menu")
+        with qa2:
+            if st.button("📊\nPlannings", use_container_width=True, key="qa_plan"):
+                st.info("➡️ Allez dans 📊 Plannings dans le menu")
+        with qa3:
+            if st.button("📄\nExport", use_container_width=True, key="qa_exp"):
+                st.info("➡️ Allez dans 📄 Export dans le menu")
         
         # Session active
         session = q("SELECT nom, date_debut, date_fin FROM sessions_examen ORDER BY date_debut DESC LIMIT 1", fetch='one')
