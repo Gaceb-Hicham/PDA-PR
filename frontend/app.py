@@ -377,16 +377,25 @@ with st.sidebar:
     
     st.divider()
     
-    # Mini stats in sidebar
+    # Mini stats in sidebar - fixed display
     stats = q("""SELECT 
         (SELECT COUNT(*) FROM examens) as exams,
         (SELECT COUNT(*) FROM professeurs) as profs
     """, fetch='one')
     
     if stats:
-        c1, c2 = st.columns(2)
-        c1.metric("📅", f"{stats['exams'] or 0}")
-        c2.metric("👨‍🏫", f"{stats['profs'] or 0}")
+        st.markdown(f"""
+        <div style="display: flex; gap: 0.5rem; padding: 0 0.5rem;">
+            <div style="flex: 1; background: rgba(99,102,241,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
+                <div style="font-size: 0.7rem; color: #64748B;">📅 Examens</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['exams'] or 0}</div>
+            </div>
+            <div style="flex: 1; background: rgba(236,72,153,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
+                <div style="font-size: 0.7rem; color: #64748B;">👨‍🏫 Profs</div>
+                <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['profs'] or 0}</div>
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.markdown("""
     <div style="position: absolute; bottom: 1rem; left: 1rem; right: 1rem;">

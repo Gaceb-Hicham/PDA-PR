@@ -1,6 +1,8 @@
 """
-Page Conflits - VERSION OPTIMISÉE
-Utilise des requêtes COUNT() rapides et du cache
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ExamPro - Gestion des Conflits                                              ║
+║  Design Premium                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
 import pandas as pd
@@ -8,8 +10,12 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from database import execute_query
+from design import inject_premium_css, page_header, stats_row
+
+inject_premium_css()
 
 
 def q(sql, params=None):
@@ -21,7 +27,6 @@ def q(sql, params=None):
 
 @st.cache_data(ttl=120)
 def get_conflict_counts(session_id):
-    """Compte les conflits rapidement avec COUNT()"""
     result = q("""
         SELECT 
             (SELECT COUNT(*) FROM conflits c 
@@ -45,7 +50,6 @@ def get_conflict_counts(session_id):
 
 @st.cache_data(ttl=120)
 def get_capacity_issues(session_id):
-    """Examens avec dépassement de capacité"""
     return q("""
         SELECT m.code, m.nom as module, l.nom as salle, l.capacite, e.nb_etudiants_prevus as etudiants
         FROM examens e
@@ -57,32 +61,44 @@ def get_capacity_issues(session_id):
 
 
 def render_conflicts():
-    st.header("⚠️ Détection et Gestion des Conflits")
+    page_header("⚠️", "Détection des Conflits", "Surveillance et résolution des problèmes de planification")
     
     session_id = 1
-    
-    # Résumé avec COUNT() rapide
-    st.subheader("📊 Résumé")
-    
     counts = get_conflict_counts(session_id)
     
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("👨‍🎓 Étudiants", counts['student_conflicts'], 
-              delta="2+ examens/jour" if counts['student_conflicts'] else None, delta_color="inverse")
-    c2.metric("🏛️ Salles", counts['room_conflicts'],
-              delta="Double réservation" if counts['room_conflicts'] else None, delta_color="inverse")
-    c3.metric("👨‍🏫 Professeurs", counts['prof_conflicts'],
-              delta=">3 surv/jour" if counts['prof_conflicts'] else None, delta_color="inverse")
-    c4.metric("📊 Capacité", counts['capacity_issues'],
-              delta="Salle insuffisante" if counts['capacity_issues'] else None, delta_color="inverse")
+    total_conflicts = (counts['student_conflicts'] or 0) + (counts['room_conflicts'] or 0) + (counts['prof_conflicts'] or 0) + (counts['capacity_issues'] or 0)
+    
+    # Stats premium
+    stats_row([
+        {"icon": "👨‍🎓", "value": counts['student_conflicts'] or 0, "label": "Conflits Étudiants"},
+        {"icon": "🏛️", "value": counts['room_conflicts'] or 0, "label": "Conflits Salles"},
+        {"icon": "👨‍🏫", "value": counts['prof_conflicts'] or 0, "label": "Surcharge Profs"},
+        {"icon": "📊", "value": counts['capacity_issues'] or 0, "label": "Dépassement Cap."}
+    ])
+    
+    # Status global
+    if total_conflicts == 0:
+        st.markdown("""
+        <div style="background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 12px; padding: 1.5rem; text-align: center; margin: 1rem 0;">
+            <span style="font-size: 2rem;">✅</span>
+            <p style="color: #6EE7B7; font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0 0 0;">Aucun conflit détecté !</p>
+        </div>
+        """, unsafe_allow_html=True)
+    else:
+        st.markdown(f"""
+        <div style="background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 12px; padding: 1.5rem; text-align: center; margin: 1rem 0;">
+            <span style="font-size: 2rem;">⚠️</span>
+            <p style="color: #FCA5A5; font-size: 1.1rem; font-weight: 600; margin: 0.5rem 0 0 0;">{total_conflicts} problème(s) à résoudre</p>
+        </div>
+        """, unsafe_allow_html=True)
     
     st.divider()
     
-    # Tabs
     tab1, tab2, tab3, tab4 = st.tabs(["👨‍🎓 Étudiants", "🏛️ Salles", "👨‍🏫 Professeurs", "📊 Capacité"])
     
     with tab1:
-        st.subheader("👨‍🎓 Conflits Étudiants")
+        st.markdown("### 👨‍🎓 Conflits Étudiants")
+        st.caption("Étudiants ayant 2+ examens le même jour/créneau")
         if counts['student_conflicts'] > 0:
             conflicts = q("""
                 SELECT c.description, c.severite
@@ -92,15 +108,13 @@ def render_conflicts():
                 LIMIT 20
             """, (session_id,))
             if conflicts:
-                st.error(f"⚠️ {len(conflicts)} conflits")
-                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
-            else:
-                st.success("✅ Aucun conflit")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True, use_container_width=True)
         else:
             st.success("✅ Aucun conflit étudiant")
     
     with tab2:
-        st.subheader("🏛️ Conflits Salles")
+        st.markdown("### 🏛️ Conflits Salles")
+        st.caption("Double réservation de salles")
         if counts['room_conflicts'] > 0:
             conflicts = q("""
                 SELECT c.description, c.severite
@@ -110,15 +124,13 @@ def render_conflicts():
                 LIMIT 20
             """, (session_id,))
             if conflicts:
-                st.error(f"⚠️ {len(conflicts)} conflits")
-                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
-            else:
-                st.success("✅ Aucun conflit")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True, use_container_width=True)
         else:
             st.success("✅ Aucun conflit de salle")
     
     with tab3:
-        st.subheader("👨‍🏫 Surcharge Professeurs")
+        st.markdown("### 👨‍🏫 Surcharge Professeurs")
+        st.caption("Professeurs avec trop de surveillances/jour")
         if counts['prof_conflicts'] > 0:
             conflicts = q("""
                 SELECT c.description, c.severite
@@ -128,23 +140,20 @@ def render_conflicts():
                 LIMIT 20
             """, (session_id,))
             if conflicts:
-                st.warning(f"⚠️ {len(conflicts)} surcharges")
-                st.dataframe(pd.DataFrame(conflicts), hide_index=True)
-            else:
-                st.success("✅ Aucune surcharge")
+                st.dataframe(pd.DataFrame(conflicts), hide_index=True, use_container_width=True)
         else:
-            st.success("✅ Aucune surcharge professeur")
+            st.success("✅ Aucune surcharge")
     
     with tab4:
-        st.subheader("📊 Dépassement Capacité")
+        st.markdown("### 📊 Dépassement Capacité")
+        st.caption("Examens avec plus d'étudiants que la capacité de la salle")
         capacity_issues = get_capacity_issues(session_id)
         if capacity_issues:
-            st.warning(f"⚠️ {len(capacity_issues)} dépassements")
             df = pd.DataFrame(capacity_issues)
             df.columns = ['Code', 'Module', 'Salle', 'Capacité', 'Étudiants']
             st.dataframe(df, hide_index=True, use_container_width=True)
         else:
-            st.success("✅ Aucun dépassement de capacité")
+            st.success("✅ Aucun dépassement")
 
 
 if __name__ == "__main__":

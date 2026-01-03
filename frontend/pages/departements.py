@@ -1,15 +1,21 @@
 """
-Page Départements - VERSION OPTIMISÉE
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ExamPro - Gestion des Départements                                         ║
+║  Design Premium                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from database import execute_query
+from design import inject_premium_css, page_header, stats_row
+
+inject_premium_css()
 
 
 def q(sql, params=None, fetch='all'):
@@ -20,28 +26,35 @@ def q(sql, params=None, fetch='all'):
 
 
 def render_departments():
-    st.header("🏛️ Gestion des Départements")
+    page_header("🏛️", "Gestion des Départements", "Vue détaillée des départements et de leurs ressources")
     
     depts = q("SELECT * FROM departements ORDER BY nom")
     
     if not depts:
-        st.warning("Aucun département trouvé")
+        st.warning("⚠️ Aucun département trouvé")
         return
     
     dept_opts = {d['nom']: d['id'] for d in depts}
-    sel = st.selectbox("Département", list(dept_opts.keys()))
+    sel = st.selectbox("🏛️ Sélectionner un département", list(dept_opts.keys()))
     did = dept_opts[sel]
-    
-    st.divider()
     
     dept = next(d for d in depts if d['id'] == did)
     
-    c1, c2 = st.columns([2, 1])
-    with c1:
-        st.subheader(f"📊 {dept['nom']}")
-        st.caption(f"Code: {dept['code']}")
+    # Header département
+    st.markdown(f"""
+    <div style="background: linear-gradient(135deg, rgba(99,102,241,0.15) 0%, rgba(139,92,246,0.1) 100%);
+                border: 1px solid rgba(99,102,241,0.2); border-radius: 16px; padding: 1.5rem; margin: 1rem 0;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h2 style="color: #F8FAFC; margin: 0; font-size: 1.5rem;">{dept['nom']}</h2>
+                <p style="color: #94A3B8; margin: 0.25rem 0 0 0;">Code: <span style="color: #6366F1; font-weight: 600;">{dept['code']}</span></p>
+            </div>
+            <div style="font-size: 3rem; opacity: 0.5;">🎓</div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
-    # Stats rapides
+    # Stats
     stats = q("""
         SELECT 
             (SELECT COUNT(*) FROM formations f WHERE f.dept_id = %s) as forms,
@@ -54,18 +67,19 @@ def render_departments():
     
     if stats:
         s = stats[0]
-        c1, c2, c3, c4 = st.columns(4)
-        c1.metric("📚 Formations", s['forms'])
-        c2.metric("👨‍🎓 Étudiants", s['etuds'])
-        c3.metric("👨‍🏫 Professeurs", s['profs'])
-        c4.metric("📖 Modules", s['mods'])
+        stats_row([
+            {"icon": "📚", "value": s['forms'], "label": "Formations"},
+            {"icon": "👨‍🎓", "value": f"{s['etuds']:,}", "label": "Étudiants"},
+            {"icon": "👨‍🏫", "value": s['profs'], "label": "Professeurs"},
+            {"icon": "📖", "value": s['mods'], "label": "Modules"}
+        ])
     
     st.divider()
     
-    # Tabs avec Étudiants et Salles
     tab1, tab2, tab3, tab4, tab5 = st.tabs(["📚 Formations", "👨‍🏫 Professeurs", "👨‍🎓 Étudiants", "🏢 Salles", "📅 Examens"])
     
     with tab1:
+        st.markdown("### 📚 Formations")
         forms = q("""
             SELECT f.nom, f.code, f.niveau,
                    (SELECT COUNT(*) FROM etudiants e WHERE e.formation_id = f.id) as etudiants,
@@ -81,11 +95,12 @@ def render_departments():
             df.columns = ['Formation', 'Code', 'Niveau', 'Étudiants', 'Modules']
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucune formation")
+            st.info("📚 Aucune formation")
     
     with tab2:
+        st.markdown("### 👨‍🏫 Professeurs")
         profs = q("""
-            SELECT p.nom, p.prenom, p.grade, p.specialite,
+            SELECT p.nom, p.prenom, p.grade, COALESCE(p.specialite, '-') as spec,
                    (SELECT COUNT(*) FROM surveillances s WHERE s.professeur_id = p.id) as survs
             FROM professeurs p
             WHERE p.dept_id = %s
@@ -98,10 +113,10 @@ def render_departments():
             df.columns = ['Nom', 'Prénom', 'Grade', 'Spécialité', 'Surveillances']
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucun professeur")
+            st.info("👨‍🏫 Aucun professeur")
     
     with tab3:
-        # Étudiants du département
+        st.markdown("### 👨‍🎓 Étudiants")
         etudiants = q("""
             SELECT e.matricule, e.nom, e.prenom, COALESCE(e.groupe, 'G01') as groupe,
                    f.nom as formation, f.niveau
@@ -116,12 +131,12 @@ def render_departments():
             df = pd.DataFrame(etudiants)
             df.columns = ['Matricule', 'Nom', 'Prénom', 'Groupe', 'Formation', 'Niveau']
             st.dataframe(df, use_container_width=True, hide_index=True)
-            st.caption(f"{len(etudiants)} étudiants affichés (max 100)")
+            st.caption(f"📊 {len(etudiants)} étudiants affichés (max 100)")
         else:
-            st.info("Aucun étudiant")
+            st.info("👨‍🎓 Aucun étudiant")
     
     with tab4:
-        # Salles utilisées par ce département
+        st.markdown("### 🏢 Salles Utilisées")
         salles = q("""
             SELECT DISTINCT l.nom, l.code, l.type, l.capacite,
                    (SELECT COUNT(*) FROM examens e2 
@@ -142,9 +157,10 @@ def render_departments():
             df.columns = ['Salle', 'Code', 'Type', 'Capacité', 'Examens']
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucune salle utilisée par ce département")
+            st.info("🏢 Aucune salle utilisée par ce département")
     
     with tab5:
+        st.markdown("### 📅 Examens")
         exams = q("""
             SELECT e.date_examen as Date,
                    CONCAT(TIME_FORMAT(ch.heure_debut,'%H:%i'),' - ',TIME_FORMAT(ch.heure_fin,'%H:%i')) as Horaire,
@@ -156,14 +172,15 @@ def render_departments():
             JOIN creneaux_horaires ch ON e.creneau_id = ch.id
             WHERE f.dept_id = %s
             ORDER BY e.date_examen, ch.ordre
-            LIMIT 50
+            LIMIT 80
         """, (did,))
         
         if exams:
+            st.success(f"📅 {len(exams)} examens")
             df = pd.DataFrame(exams)
             st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucun examen planifié")
+            st.info("📅 Aucun examen planifié")
 
 
 if __name__ == "__main__":

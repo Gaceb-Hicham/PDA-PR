@@ -1,5 +1,8 @@
 """
-Page Statistiques - VERSION OPTIMISÉE
+╔══════════════════════════════════════════════════════════════════════════════╗
+║  ExamPro - Statistiques                                                      ║
+║  Design Premium                                                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
 """
 import streamlit as st
 import pandas as pd
@@ -8,8 +11,12 @@ import sys
 import os
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..', 'backend'))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 
 from database import execute_query
+from design import inject_premium_css, page_header, stats_row
+
+inject_premium_css()
 
 
 def q(sql, params=None):
@@ -20,12 +27,12 @@ def q(sql, params=None):
 
 
 def render_stats():
-    st.header("📊 Statistiques")
+    page_header("📊", "Statistiques", "Analyse détaillée des données de la faculté")
     
-    tab1, tab2, tab3 = st.tabs(["Générales", "Par Département", "Examens"])
+    tab1, tab2, tab3 = st.tabs(["📈 Générales", "🏛️ Départements", "📅 Examens"])
     
     with tab1:
-        st.subheader("📈 Statistiques Globales")
+        st.markdown("### 📈 Statistiques Globales")
         
         stats = q("""
             SELECT 
@@ -41,20 +48,21 @@ def render_stats():
         
         if stats:
             s = stats[0]
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("Départements", s['depts'])
-            c2.metric("Formations", s['forms'])
-            c3.metric("Modules", s['mods'])
-            c4.metric("Professeurs", s['profs'])
-            
-            c5, c6, c7, c8 = st.columns(4)
-            c5.metric("Étudiants", f"{s['etuds']:,}")
-            c6.metric("Inscriptions", f"{s['inscrip']:,}")
-            c7.metric("Examens", s['exams'])
-            c8.metric("Surveillances", s['survs'])
+            stats_row([
+                {"icon": "🏛️", "value": s['depts'], "label": "Départements"},
+                {"icon": "📚", "value": s['forms'], "label": "Formations"},
+                {"icon": "📖", "value": s['mods'], "label": "Modules"},
+                {"icon": "👨‍🏫", "value": s['profs'], "label": "Professeurs"}
+            ])
+            stats_row([
+                {"icon": "👨‍🎓", "value": f"{s['etuds']:,}", "label": "Étudiants"},
+                {"icon": "📝", "value": f"{s['inscrip']:,}", "label": "Inscriptions"},
+                {"icon": "📅", "value": s['exams'], "label": "Examens"},
+                {"icon": "👁️", "value": s['survs'], "label": "Surveillances"}
+            ])
     
     with tab2:
-        st.subheader("🏛️ Par Département")
+        st.markdown("### 🏛️ Statistiques par Département")
         
         dept_stats = q("""
             SELECT 
@@ -72,13 +80,32 @@ def render_stats():
             df = pd.DataFrame(dept_stats)
             st.dataframe(df, use_container_width=True, hide_index=True)
             
-            fig = px.bar(df, x='Département', y='Étudiants', color='Département')
-            fig.update_layout(showlegend=False, plot_bgcolor='rgba(0,0,0,0)', 
-                            paper_bgcolor='rgba(0,0,0,0)', font_color='white')
+            st.markdown("#### 📊 Répartition des Étudiants")
+            fig = px.bar(df, x='Département', y='Étudiants', 
+                        color='Étudiants',
+                        color_continuous_scale=['#6366F1', '#EC4899'])
+            fig.update_layout(
+                showlegend=False, 
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                font_color='#94A3B8',
+                coloraxis_showscale=False
+            )
             st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("#### 🎓 Répartition Professeurs/Formations")
+            fig2 = px.scatter(df, x='Professeurs', y='Formations', size='Étudiants',
+                            color='Département', size_max=60,
+                            color_discrete_sequence=['#6366F1', '#8B5CF6', '#EC4899', '#F59E0B', '#10B981'])
+            fig2.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)', 
+                font_color='#94A3B8'
+            )
+            st.plotly_chart(fig2, use_container_width=True)
     
     with tab3:
-        st.subheader("📅 Statistiques Examens")
+        st.markdown("### 📅 Statistiques des Examens")
         
         exam_stats = q("""
             SELECT 
@@ -94,16 +121,34 @@ def render_stats():
         """)
         
         if exam_stats:
-            df = pd.DataFrame(exam_stats)
-            st.dataframe(df, use_container_width=True, hide_index=True)
+            # Summary
+            total_exams = sum(e['Examens'] for e in exam_stats)
+            total_students = sum(e['Étudiants'] or 0 for e in exam_stats)
             
-            fig = px.line(df, x='Date', y='Examens', markers=True)
-            fig.update_traces(line_color='#FF6B35')
-            fig.update_layout(plot_bgcolor='rgba(0,0,0,0)', paper_bgcolor='rgba(0,0,0,0)',
-                            font_color='white')
+            stats_row([
+                {"icon": "📅", "value": len(exam_stats), "label": "Jours d'examens"},
+                {"icon": "📝", "value": total_exams, "label": "Total Examens"},
+                {"icon": "👨‍🎓", "value": f"{total_students:,}", "label": "Places Étudiants"}
+            ])
+            
+            st.divider()
+            
+            df = pd.DataFrame(exam_stats)
+            
+            st.markdown("#### 📊 Distribution Journalière")
+            fig = px.area(df, x='Date', y='Examens')
+            fig.update_traces(fill='tozeroy', line_color='#6366F1', fillcolor='rgba(99,102,241,0.3)')
+            fig.update_layout(
+                plot_bgcolor='rgba(0,0,0,0)', 
+                paper_bgcolor='rgba(0,0,0,0)',
+                font_color='#94A3B8'
+            )
             st.plotly_chart(fig, use_container_width=True)
+            
+            st.markdown("#### 📋 Détail par Jour")
+            st.dataframe(df, use_container_width=True, hide_index=True)
         else:
-            st.info("Aucun examen planifié")
+            st.info("📋 Aucun examen planifié")
 
 
 if __name__ == "__main__":
