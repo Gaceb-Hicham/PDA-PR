@@ -715,11 +715,12 @@ elif "Données" in page:
             if depts:
                 with st.form("prof_form"):
                     c1, c2 = st.columns(2)
-                    nom = c1.text_input("Nom", placeholder="BENALI")
-                    prenom = c2.text_input("Prénom", placeholder="Ahmed")
+                    matricule = c1.text_input("Matricule", placeholder="P001")
+                    nom = c2.text_input("Nom", placeholder="BENALI")
                     c3, c4 = st.columns(2)
-                    dept_sel = c3.selectbox("Département", [d['nom'] for d in depts], key="pd")
+                    prenom = c3.text_input("Prénom", placeholder="Ahmed")
                     grade = c4.selectbox("Grade", ["MAA", "MAB", "MCA", "MCB", "PR"])
+                    dept_sel = st.selectbox("Département", [d['nom'] for d in depts], key="pd")
                     
                     # Spécialité avec suggestions
                     if spec_suggestions:
@@ -727,12 +728,14 @@ elif "Données" in page:
                     specialite = st.text_input("Spécialité", placeholder="Intelligence Artificielle, Réseaux...")
                     
                     if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
-                        if nom and prenom:
+                        if matricule and nom and prenom:
                             did = next(d['id'] for d in depts if d['nom'] == dept_sel)
-                            mat = f"P{did}{nom[:3].upper()}{len(profs) if profs else 0}"
-                            insert("INSERT INTO professeurs (matricule, nom, prenom, dept_id, grade, specialite) VALUES (%s,%s,%s,%s,%s,%s)", 
-                                   (mat, nom, prenom, did, grade, specialite or None))
-                            st.success(f"✅ Professeur ajouté! Matricule: {mat}"); st.cache_data.clear(); st.rerun()
+                            try:
+                                insert("INSERT INTO professeurs (matricule, nom, prenom, dept_id, grade, specialite) VALUES (%s,%s,%s,%s,%s,%s)", 
+                                       (matricule, nom, prenom, did, grade, specialite or None))
+                                st.success(f"✅ Professeur ajouté!"); st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Matricule déjà existant ou erreur: {e}")
         
         with col_del:
             st.markdown("#### 🗑️ Supprimer")
@@ -937,21 +940,28 @@ elif "Données" in page:
                 st.markdown("#### ➕ Ajouter un étudiant")
                 with st.form("etud_form"):
                     c1, c2 = st.columns(2)
-                    nom = c1.text_input("Nom", placeholder="AMRANI")
-                    prenom = c2.text_input("Prénom", placeholder="Mohamed")
+                    matricule = c1.text_input("Matricule", placeholder="E20250001")
+                    nom = c2.text_input("Nom", placeholder="AMRANI")
+                    c3, c4 = st.columns(2)
+                    prenom = c3.text_input("Prénom", placeholder="Mohamed")
                     
-                    # Groupe: dropdown avec suggestions + option nouveau
-                    if group_list:
-                        st.caption(f"💡 Groupes existants: {', '.join(group_list)}")
-                    groupe = st.text_input("Groupe", value=group_list[0] if group_list else "G01", placeholder="G01, G02...")
+                    # Groupe: dropdown avec option pour nouveau groupe
+                    groupe_options = group_list + ["➕ Nouveau groupe..."] if group_list else ["G01", "➕ Nouveau groupe..."]
+                    groupe_sel = c4.selectbox("Groupe", groupe_options, key="groupe_sel")
+                    
+                    # Si nouveau groupe sélectionné, afficher champ de saisie
+                    if groupe_sel == "➕ Nouveau groupe...":
+                        groupe = st.text_input("Nom du nouveau groupe", placeholder="G03")
+                    else:
+                        groupe = groupe_sel
                     
                     if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
-                        if nom and prenom:
-                            # Générer matricule unique
-                            count = q("SELECT COUNT(*) as c FROM etudiants WHERE formation_id=%s", (fid,), fetch='one')
-                            mat = f"E{fid:04d}{(count['c'] if count else 0):04d}"
-                            insert("INSERT INTO etudiants (matricule, nom, prenom, formation_id, groupe, promo) VALUES (%s,%s,%s,%s,%s,2025)", (mat, nom, prenom, fid, groupe))
-                            st.success(f"✅ Étudiant ajouté! Matricule: {mat}"); st.cache_data.clear(); st.rerun()
+                        if matricule and nom and prenom and groupe:
+                            try:
+                                insert("INSERT INTO etudiants (matricule, nom, prenom, formation_id, groupe, promo) VALUES (%s,%s,%s,%s,%s,2025)", (matricule, nom, prenom, fid, groupe))
+                                st.success(f"✅ Étudiant ajouté!"); st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Matricule déjà existant ou erreur: {e}")
             
             with col_del:
                 st.markdown("#### 🗑️ Supprimer")
