@@ -530,18 +530,18 @@ if "Dashboard" in page:
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE: CONFIGURATION                                                         ║
+# ║  PAGE: CONFIGURATION - AVEC PARAMÈTRES D'OPTIMISATION                       ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 elif "Configuration" in page:
     st.markdown("""
     <div class="hero-gradient">
         <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">⚙️ Configuration</h1>
-        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Gérer les sessions d'examen et les créneaux horaires</p>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Sessions, créneaux et paramètres d'optimisation</p>
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2 = st.tabs(["📅 Sessions", "🕐 Créneaux"])
+    tab1, tab2, tab3 = st.tabs(["📅 Sessions", "🕐 Créneaux", "⚡ Optimisation"])
     
     with tab1:
         sessions = get_sessions()
@@ -583,6 +583,61 @@ elif "Configuration" in page:
                 insert("INSERT INTO creneaux_horaires (libelle, heure_debut, heure_fin, ordre) VALUES (%s,%s,%s,%s)", (lib, h1, h2, ordre))
                 st.success("✅ Créneau ajouté!"); st.cache_data.clear(); st.rerun()
         st.markdown('</div>', unsafe_allow_html=True)
+    
+    with tab3:
+        st.markdown("### ⚡ Paramètres d'Optimisation")
+        st.info("Ces paramètres contrôlent les contraintes de génération des plannings d'examens.")
+        
+        # Initialiser les valeurs session si pas déjà fait
+        if 'max_exam_student' not in st.session_state:
+            st.session_state.max_exam_student = 1
+        if 'max_exam_prof' not in st.session_state:
+            st.session_state.max_exam_prof = 3
+        if 'fair_distribution' not in st.session_state:
+            st.session_state.fair_distribution = True
+        if 'dept_priority' not in st.session_state:
+            st.session_state.dept_priority = True
+        
+        st.markdown("#### 👨‍🎓 Contraintes Étudiants")
+        col1, col2 = st.columns(2)
+        st.session_state.max_exam_student = col1.number_input(
+            "Max examens par étudiant par jour",
+            min_value=1, max_value=3, value=st.session_state.max_exam_student,
+            help="Nombre maximum d'examens qu'un étudiant peut passer par jour"
+        )
+        
+        st.markdown("#### 👨‍🏫 Contraintes Professeurs")
+        col1, col2 = st.columns(2)
+        st.session_state.max_exam_prof = col1.number_input(
+            "Max surveillances par prof par jour",
+            min_value=1, max_value=5, value=st.session_state.max_exam_prof,
+            help="Nombre maximum de surveillances par professeur par jour"
+        )
+        
+        st.markdown("#### ⚖️ Distribution Équitable")
+        st.session_state.fair_distribution = st.checkbox(
+            "Activer la distribution équitable des surveillances",
+            value=st.session_state.fair_distribution,
+            help="Tous les enseignants auront un nombre similaire de surveillances"
+        )
+        st.session_state.dept_priority = st.checkbox(
+            "Priorité départementale",
+            value=st.session_state.dept_priority,
+            help="Un enseignant surveille en priorité les examens de son département"
+        )
+        
+        st.divider()
+        
+        # Résumé
+        st.markdown("#### 📊 Résumé des Contraintes Actives")
+        st.markdown(f"""
+        <div style="background: #1E1E32; padding: 15px; border-radius: 8px; border-left: 4px solid #6366F1;">
+            <p style="color: #F8FAFC; margin: 5px 0;">✅ <b>Étudiants:</b> Maximum {st.session_state.max_exam_student} examen(s) par jour</p>
+            <p style="color: #F8FAFC; margin: 5px 0;">✅ <b>Professeurs:</b> Maximum {st.session_state.max_exam_prof} surveillance(s) par jour</p>
+            <p style="color: #F8FAFC; margin: 5px 0;">{'✅' if st.session_state.fair_distribution else '❌'} <b>Distribution équitable</b> des surveillances</p>
+            <p style="color: #F8FAFC; margin: 5px 0;">{'✅' if st.session_state.dept_priority else '❌'} <b>Priorité départementale</b></p>
+        </div>
+        """, unsafe_allow_html=True)
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
