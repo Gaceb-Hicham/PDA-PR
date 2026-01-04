@@ -419,16 +419,16 @@ if "Dashboard" in page:
     </div>
     """, unsafe_allow_html=True)
     
-    # Stats
+    # Stats - CORRIGÉ: examens = modules planifiés distincts
     stats = q("""SELECT 
         (SELECT COUNT(*) FROM departements) as depts,
         (SELECT COUNT(*) FROM formations) as forms,
         (SELECT COUNT(*) FROM professeurs) as profs,
         (SELECT COUNT(*) FROM etudiants) as etuds,
-        (SELECT COUNT(*) FROM modules) as mods,
+        (SELECT COUNT(*) FROM modules WHERE semestre='S1') as mods,
         (SELECT COUNT(*) FROM inscriptions) as inscrip,
         (SELECT COUNT(*) FROM lieu_examen) as salles,
-        (SELECT COUNT(*) FROM examens) as exams
+        (SELECT COUNT(DISTINCT module_id) FROM examens) as exams
     """, fetch='one')
     
     if stats:
@@ -462,7 +462,7 @@ if "Dashboard" in page:
             <div class="stat-box">
                 <span class="stat-icon">📖</span>
                 <div class="stat-value">{stats['mods'] or 0}</div>
-                <div class="stat-label">Modules</div>
+                <div class="stat-label">Modules S1</div>
             </div>
             <div class="stat-box">
                 <span class="stat-icon">📝</span>
@@ -472,7 +472,7 @@ if "Dashboard" in page:
             <div class="stat-box">
                 <span class="stat-icon">📅</span>
                 <div class="stat-value">{stats['exams'] or 0}</div>
-                <div class="stat-label">Examens</div>
+                <div class="stat-label">Examens planifiés</div>
             </div>
         </div>
         """, unsafe_allow_html=True)
@@ -1310,9 +1310,14 @@ elif "Export" in page:
                 if sel_g == "Tous (multi-pages)":
                     all_ex = {}
                     for g in groupes:
-                        ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, m.code as module_code, m.nom as module_nom, l.code as salle
+                        ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                m.code as module_code, m.nom as module_nom, l.code as salle,
+                                (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                                 JOIN professeurs p ON sv.professeur_id=p.id 
+                                 WHERE sv.examen_id=e.id LIMIT 1) as surveillant
                                 FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
-                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], g['g']))
+                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], g['g']))
                         if ex: all_ex[g['g']] = ex
                     if all_ex:
                         try:
@@ -1321,9 +1326,14 @@ elif "Export" in page:
                             st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_f}.pdf", "application/pdf")
                         except Exception as e: st.error(f"Erreur: {e}")
                 else:
-                    ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, m.code as module_code, m.nom as module_nom, l.code as salle
+                    ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                            m.code as module_code, m.nom as module_nom, l.code as salle,
+                            (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                             JOIN professeurs p ON sv.professeur_id=p.id 
+                             WHERE sv.examen_id=e.id LIMIT 1) as surveillant
                             FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
-                            JOIN creneaux_horaires ch ON e.creneau_id=ch.id WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], sel_g))
+                            JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                            WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], sel_g))
                     if ex:
                         try:
                             from services.pdf_generator import generate_student_schedule_pdf
@@ -1343,10 +1353,15 @@ elif "Export" in page:
                 if st.button("📄 Générer PDF Département", type="primary", key="b2"):
                     all_data = {}
                     for f in forms:
-                        ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, m.code as module_code, m.nom as module_nom, 
-                                COALESCE(e.groupe,'G01') as groupe, l.code as salle
+                        ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                m.code as module_code, m.nom as module_nom, 
+                                COALESCE(e.groupe,'G01') as groupe, l.code as salle,
+                                (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                                 JOIN professeurs p ON sv.professeur_id=p.id 
+                                 WHERE sv.examen_id=e.id LIMIT 1) as surveillant
                                 FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
-                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
+                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
                         if ex: all_data[f['nom']] = {'niveau': f['niveau'], 'exams': ex}
                     if all_data:
                         try:
@@ -1367,9 +1382,19 @@ elif "Export" in page:
             pd2 = next(p for p in profs if f"{p['prenom']} {p['nom']}" == sel_p)
             
             if st.button("📄 Générer PDF", type="primary", key="b3"):
-                survs = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, m.code as module_code, m.nom as module_nom, l.code as salle, s.role
-                            FROM surveillances s JOIN examens e ON s.examen_id=e.id JOIN modules m ON e.module_id=m.id
-                            JOIN lieu_examen l ON e.salle_id=l.id JOIN creneaux_horaires ch ON e.creneau_id=ch.id WHERE s.professeur_id=%s ORDER BY e.date_examen""", (pd2['id'],))
+                survs = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                            m.code as module_code, m.nom as module_nom, 
+                            f.nom as formation, COALESCE(e.groupe,'G01') as groupe,
+                            d.nom as departement, d.nom as dept,
+                            l.code as salle, s.role
+                            FROM surveillances s 
+                            JOIN examens e ON s.examen_id=e.id 
+                            JOIN modules m ON e.module_id=m.id
+                            JOIN formations f ON m.formation_id=f.id
+                            JOIN departements d ON f.dept_id=d.id
+                            JOIN lieu_examen l ON e.salle_id=l.id 
+                            JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                            WHERE s.professeur_id=%s ORDER BY e.date_examen""", (pd2['id'],))
                 if survs:
                     try:
                         from services.pdf_generator import generate_professor_schedule_pdf
@@ -1389,9 +1414,21 @@ elif "Export" in page:
             sd = next(s for s in salles if f"{s['nom']} ({s['capacite']})" == sel_s)
             
             if st.button("📄 Générer PDF", type="primary", key="b4"):
-                ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, m.code as module_code, m.nom as module_nom, f.nom as formation
-                        FROM examens e JOIN modules m ON e.module_id=m.id JOIN formations f ON m.formation_id=f.id
-                        JOIN creneaux_horaires ch ON e.creneau_id=ch.id WHERE e.salle_id=%s ORDER BY e.date_examen""", (sd['id'],))
+                ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                        m.code as module_code, m.nom as module_nom, f.nom as formation,
+                        COALESCE(e.groupe,'G01') as groupe,
+                        (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                         JOIN professeurs p ON sv.professeur_id=p.id 
+                         WHERE sv.examen_id=e.id AND sv.role='RESPONSABLE' LIMIT 1) as surveillant,
+                        (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                         JOIN professeurs p ON sv.professeur_id=p.id 
+                         WHERE sv.examen_id=e.id LIMIT 1) as prof_nom,
+                        (SELECT COUNT(*) FROM inscriptions i WHERE i.module_id=e.module_id) as nb_etudiants
+                        FROM examens e 
+                        JOIN modules m ON e.module_id=m.id 
+                        JOIN formations f ON m.formation_id=f.id
+                        JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                        WHERE e.salle_id=%s ORDER BY e.date_examen""", (sd['id'],))
                 if ex:
                     try:
                         from services.pdf_generator import generate_room_schedule_pdf
