@@ -1,8 +1,8 @@
 """
 ╔══════════════════════════════════════════════════════════════════════════════╗
-║  ExamPro - Générateur de PDF Professionnel                                   ║
+║  ExamPro - Générateur de PDF Professionnel v2                                ║
 ║  Design Universitaire - Université de Boumerdes                              ║
-║  Colonnes: Date, Jour, Heure, Code, Module, Niveau, Salle, Surveillant       ║
+║  Mode PAYSAGE + Largeurs de colonnes adaptées                                ║
 ╚══════════════════════════════════════════════════════════════════════════════╝
 """
 from reportlab.lib import colors
@@ -16,21 +16,16 @@ from datetime import datetime
 import os
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PROFESSIONAL COLOR PALETTE (University Style)
+# PROFESSIONAL COLOR PALETTE
 # ═══════════════════════════════════════════════════════════════════════════════
-HEADER_RED = colors.HexColor('#7B2D26')       # Bordeaux header
-HEADER_DARK = colors.HexColor('#5A1F1A')      # Darker red
-BG_CREAM = colors.HexColor('#F5F0E6')         # Crème background
-BG_LIGHT = colors.HexColor('#FEFDFB')         # White-cream
-TEXT_DARK = colors.HexColor('#2D2D2D')        # Dark text
-TEXT_GRAY = colors.HexColor('#666666')        # Gray text
-BORDER_LIGHT = colors.HexColor('#D4C4A8')     # Light brown border
-ROW_ALT = colors.HexColor('#F9F6F0')          # Alternating row
-
-# App colors for accent
-PRIMARY = colors.HexColor('#6366F1')
-ACCENT = colors.HexColor('#8B5CF6')
-SECONDARY = colors.HexColor('#EC4899')
+HEADER_RED = colors.HexColor('#7B2D26')
+HEADER_DARK = colors.HexColor('#5A1F1A')
+BG_CREAM = colors.HexColor('#F5F0E6')
+BG_LIGHT = colors.HexColor('#FEFDFB')
+TEXT_DARK = colors.HexColor('#2D2D2D')
+TEXT_GRAY = colors.HexColor('#666666')
+BORDER_LIGHT = colors.HexColor('#D4C4A8')
+ROW_ALT = colors.HexColor('#F9F6F0')
 
 
 def create_styles():
@@ -40,68 +35,57 @@ def create_styles():
     styles.add(ParagraphStyle(
         name='UnivTitle',
         parent=styles['Heading1'],
-        fontSize=22,
+        fontSize=18,
         textColor=HEADER_RED,
         alignment=TA_CENTER,
         spaceAfter=3,
-        fontName='Times-Bold'
+        fontName='Helvetica-Bold'
     ))
     
     styles.add(ParagraphStyle(
         name='SubTitle',
         parent=styles['Normal'],
-        fontSize=11,
+        fontSize=10,
         textColor=TEXT_GRAY,
         alignment=TA_CENTER,
-        spaceAfter=15,
-        fontName='Times-Roman'
+        spaceAfter=10,
+        fontName='Helvetica'
     ))
     
     styles.add(ParagraphStyle(
         name='SectionHeader',
         parent=styles['Normal'],
-        fontSize=14,
+        fontSize=12,
         textColor=HEADER_RED,
         alignment=TA_CENTER,
-        fontName='Times-Bold',
-        spaceBefore=10,
-        spaceAfter=10
+        fontName='Helvetica-Bold',
+        spaceBefore=8,
+        spaceAfter=8
     ))
     
     styles.add(ParagraphStyle(
         name='InfoText',
         parent=styles['Normal'],
-        fontSize=10,
+        fontSize=9,
         textColor=TEXT_DARK,
         alignment=TA_LEFT,
-        fontName='Times-Roman'
+        fontName='Helvetica'
     ))
     
     styles.add(ParagraphStyle(
-        name='InstructionTitle',
+        name='CellText',
         parent=styles['Normal'],
-        fontSize=12,
-        textColor=HEADER_RED,
-        alignment=TA_LEFT,
-        fontName='Times-Bold',
-        spaceBefore=15
-    ))
-    
-    styles.add(ParagraphStyle(
-        name='Instruction',
-        parent=styles['Normal'],
-        fontSize=10,
+        fontSize=7,
         textColor=TEXT_DARK,
-        alignment=TA_LEFT,
-        fontName='Times-Roman',
-        bulletIndent=15,
-        leftIndent=25
+        alignment=TA_CENTER,
+        fontName='Helvetica',
+        leading=9
     ))
     
     styles.add(ParagraphStyle(
         name='Footer',
         parent=styles['Normal'],
-        fontSize=8,
+        fontSize=7,
         textColor=TEXT_GRAY,
         alignment=TA_CENTER
     ))
@@ -110,126 +94,81 @@ def create_styles():
 
 
 def format_date(date_obj):
-    """Formate la date"""
     if date_obj:
         if hasattr(date_obj, 'strftime'):
-            return date_obj.strftime('%d %b %Y')
-        return str(date_obj)
-    return ""
-
-
-def get_day_name(date_obj):
-    """Retourne le nom du jour"""
-    days_fr = ['Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi', 'Dimanche']
-    if date_obj and hasattr(date_obj, 'weekday'):
-        return days_fr[date_obj.weekday()]
+            return date_obj.strftime('%d/%m/%Y')
+        return str(date_obj)[:10]
     return ""
 
 
 def format_time(heure_debut, heure_fin=None):
-    """Formate l'heure"""
     if heure_debut:
         start = str(heure_debut)[:5]
         if heure_fin:
             end = str(heure_fin)[:5]
-            return f"{start} – {end}"
+            return f"{start}-{end}"
         return start
     return ""
 
 
-def create_header_table(title, subtitle_parts, width=17*cm):
-    """
-    Crée l'en-tête professionnel du document avec logo si disponible
-    subtitle_parts: liste de tuples (label, valeur) ou liste de strings
-    """
+def truncate(text, max_len=25):
+    """Tronque le texte si trop long"""
+    text = str(text) if text else ""
+    if len(text) > max_len:
+        return text[:max_len-2] + ".."
+    return text
+
+
+def create_header(title, info_lines, styles, width=26*cm):
+    """Crée l'en-tête du document"""
     elements = []
-    styles = create_styles()
     
-    # Essayer de charger le logo
-    logo_path = os.path.join(os.path.dirname(__file__), '..', '..', 'assets', 'logo_univ.jpg')
-    logo_exists = os.path.exists(logo_path)
+    # Titre
+    elements.append(Paragraph(f"· {title} ·", styles['UnivTitle']))
     
-    if logo_exists:
-        # Header avec logos (gauche et droite)
-        try:
-            logo = Image(logo_path, width=2*cm, height=2*cm)
-            header_data = [[logo, Paragraph(title, styles['UnivTitle']), logo]]
-            header_table = Table(header_data, colWidths=[2.5*cm, 12*cm, 2.5*cm])
-            header_table.setStyle(TableStyle([
-                ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-                ('ALIGN', (1, 0), (1, 0), 'CENTER'),
-                ('ALIGN', (2, 0), (2, 0), 'RIGHT'),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ]))
-            elements.append(header_table)
-        except:
-            # Si erreur avec logo, juste le titre
-            elements.append(Paragraph(title, styles['UnivTitle']))
-    else:
-        # Titre principal sans logo
-        elements.append(Paragraph(title, styles['UnivTitle']))
+    # Infos
+    if info_lines:
+        info_text = "  |  ".join(info_lines)
+        elements.append(Paragraph(info_text, styles['SubTitle']))
     
-    # Sous-titre avec séparateurs
-    if subtitle_parts:
-        if isinstance(subtitle_parts[0], tuple):
-            subtitle_text = "  |  ".join([f"{label}: {val}" for label, val in subtitle_parts])
-        else:
-            subtitle_text = "  |  ".join(subtitle_parts)
-        elements.append(Paragraph(subtitle_text, styles['SubTitle']))
+    # Ligne
+    line = Table([[""]],colWidths=[width])
+    line.setStyle(TableStyle([('LINEBELOW', (0, 0), (-1, -1), 1, BORDER_LIGHT)]))
+    elements.append(line)
+    elements.append(Spacer(1, 8))
     
     return elements
 
 
-def create_section_title(text, width=17*cm):
-    """Crée un titre de section avec décoration"""
-    data = [[f"· {text} ·"]]
-    table = Table(data, colWidths=[width])
-    table.setStyle(TableStyle([
-        ('TEXTCOLOR', (0, 0), (-1, -1), HEADER_RED),
-        ('FONTNAME', (0, 0), (-1, -1), 'Times-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 14),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('TOPPADDING', (0, 0), (-1, -1), 15),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 10),
-    ]))
-    return table
-
-
-def create_exam_table(headers, data, col_widths):
-    """
-    Crée un tableau d'examens avec le style universitaire
-    Headers: Liste des en-têtes
-    Data: Liste de listes (lignes)
-    """
-    table_data = [headers] + data
+def create_table(headers, data, col_widths, styles):
+    """Crée un tableau avec text wrapping"""
+    # Convertir les données en Paragraphs pour le wrapping
+    cell_style = styles['CellText']
     
-    table = Table(table_data, colWidths=col_widths)
+    # En-têtes
+    header_row = [Paragraph(f"<b>{h}</b>", cell_style) for h in headers]
+    
+    # Données
+    data_rows = []
+    for row in data:
+        data_rows.append([Paragraph(str(cell) if cell else "", cell_style) for cell in row])
+    
+    table_data = [header_row] + data_rows
+    table = Table(table_data, colWidths=col_widths, repeatRows=1)
     
     style_commands = [
-        # Header style - burgundy background
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_RED),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-        ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-        ('FONTSIZE', (0, 0), (-1, 0), 9),
-        ('ALIGN', (0, 0), (-1, 0), 'CENTER'),
-        ('VALIGN', (0, 0), (-1, 0), 'MIDDLE'),
-        ('TOPPADDING', (0, 0), (-1, 0), 10),
-        ('BOTTOMPADDING', (0, 0), (-1, 0), 10),
-        
-        # Body style
-        ('FONTNAME', (0, 1), (-1, -1), 'Times-Roman'),
-        ('FONTSIZE', (0, 1), (-1, -1), 9),
-        ('ALIGN', (0, 1), (-1, -1), 'CENTER'),
-        ('VALIGN', (0, 1), (-1, -1), 'MIDDLE'),
-        ('TOPPADDING', (0, 1), (-1, -1), 8),
-        ('BOTTOMPADDING', (0, 1), (-1, -1), 8),
-        
-        # Grid
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('TOPPADDING', (0, 0), (-1, 0), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, 0), 6),
+        ('TOPPADDING', (0, 1), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 1), (-1, -1), 4),
         ('GRID', (0, 0), (-1, -1), 0.5, BORDER_LIGHT),
-        ('LINEBELOW', (0, 0), (-1, 0), 1.5, HEADER_RED),
+        ('LINEBELOW', (0, 0), (-1, 0), 1, HEADER_RED),
     ]
     
-    # Alternating row colors
     for i in range(1, len(table_data)):
         if i % 2 == 0:
             style_commands.append(('BACKGROUND', (0, i), (-1, i), ROW_ALT))
@@ -240,115 +179,51 @@ def create_exam_table(headers, data, col_widths):
     return table
 
 
-def create_instructions_section():
-    """Crée la section des instructions académiques"""
-    styles = create_styles()
-    elements = []
-    
-    # Ligne de séparation
-    sep_line = Table([[""]], colWidths=[17*cm])
-    sep_line.setStyle(TableStyle([
-        ('LINEABOVE', (0, 0), (-1, -1), 1, BORDER_LIGHT),
-        ('TOPPADDING', (0, 0), (-1, -1), 10),
-    ]))
-    elements.append(sep_line)
-    
-    # Titre
-    elements.append(Paragraph("· Academic Instructions ·", styles['InstructionTitle']))
-    elements.append(Spacer(1, 8))
-    
-    # Instructions
-    instructions = [
-        "• Les étudiants doivent arriver 30 minutes avant l'heure de l'examen.",
-        "• La carte d'étudiant valide est obligatoire.",
-        "• Les appareils électroniques sont strictement interdits sauf autorisation.",
-        "• L'entrée est interdite après 30 minutes du début de l'examen."
-    ]
-    
-    for instr in instructions:
-        elements.append(Paragraph(instr, styles['Instruction']))
-        elements.append(Spacer(1, 3))
-    
-    return elements
-
-
-def create_footer_text():
-    """Crée le pied de page"""
+def create_footer():
     return Paragraph(
-        f"Généré le {datetime.now().strftime('%d/%m/%Y à %H:%M')} • Université de Boumerdes • ExamPro",
-        ParagraphStyle('Footer', fontSize=8, textColor=TEXT_GRAY, alignment=TA_CENTER)
+        f"Généré le {datetime.now().strftime('%d/%m/%Y %H:%M')} • Université de Boumerdes • ExamPro",
+        ParagraphStyle('Footer', fontSize=7, textColor=TEXT_GRAY, alignment=TA_CENTER)
     )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# PDF GENERATION FUNCTIONS
+# PDF GENERATION - MODE PAYSAGE
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def generate_formation_schedule_pdf(formation_name, groupe, niveau, departement, examens):
-    """
-    Génère un PDF du planning étudiant - DESIGN UNIVERSITAIRE
-    Colonnes: Date, Jour, Heure, Code, Module, Niveau, Salle, Surveillant
-    """
+    """Planning étudiant - PAYSAGE"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm,
-                           leftMargin=1.5*cm, rightMargin=1.5*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4), 
+                           topMargin=1*cm, bottomMargin=1*cm,
+                           leftMargin=1*cm, rightMargin=1*cm)
     styles = create_styles()
     elements = []
     
     # Header
-    elements.extend(create_header_table(
-        "University Final Examination Schedule",
-        [
-            ("Academic Year", "2025 – 2026"),
-            ("Semester", "Fall"),
-            ("Faculty", "Sciences"),
-            ("Department", departement or "—")
-        ]
+    elements.extend(create_header(
+        "Planning des Examens",
+        [f"Formation: {formation_name}", f"Groupe: {groupe}", f"Niveau: {niveau}", f"Dept: {departement or '—'}"],
+        styles, width=27*cm
     ))
     
-    # Ligne décorative
-    line = Table([[""]], colWidths=[17*cm])
-    line.setStyle(TableStyle([('LINEBELOW', (0, 0), (-1, -1), 1, BORDER_LIGHT)]))
-    elements.append(line)
-    elements.append(Spacer(1, 10))
-    
-    # Section titre
-    elements.append(create_section_title("Examination Timetable"))
-    
-    # Info formation
-    info_text = f"<b>Formation:</b> {formation_name}  |  <b>Groupe:</b> {groupe}  |  <b>Niveau:</b> {niveau}"
-    elements.append(Paragraph(info_text, styles['InfoText']))
-    elements.append(Spacer(1, 10))
-    
-    # Tableau des examens
     if examens:
-        headers = ['Date', 'Day', 'Time', 'Course Code', 'Course Title', 'Level', 'Room', 'Invigilator']
+        headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle', 'Surveillant']
         data = []
-        
         for exam in examens:
-            date_str = format_date(exam.get('date'))
-            day = get_day_name(exam.get('date'))
-            time = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
-            code = exam.get('module_code', '')
-            title = exam.get('module_nom', '')
-            level = exam.get('niveau', niveau)
-            room = exam.get('salle', '')
-            invigilator = exam.get('surveillant', exam.get('prof_nom', ''))
-            
-            data.append([date_str, day, time, code, title, level, room, invigilator])
+            data.append([
+                format_date(exam.get('date')),
+                format_time(exam.get('heure_debut'), exam.get('heure_fin')),
+                truncate(exam.get('module_code', ''), 10),
+                truncate(exam.get('module_nom', ''), 35),
+                exam.get('salle', ''),
+                truncate(exam.get('surveillant', ''), 20)
+            ])
         
-        col_widths = [2.2*cm, 2*cm, 2.2*cm, 2*cm, 4*cm, 1.5*cm, 1.5*cm, 2.2*cm]
-        table = create_exam_table(headers, data, col_widths)
-        elements.append(table)
-    else:
-        elements.append(Paragraph("Aucun examen planifié pour cette formation.", styles['InfoText']))
+        col_widths = [2.5*cm, 2.5*cm, 2*cm, 9*cm, 2*cm, 5*cm]
+        elements.append(create_table(headers, data, col_widths, styles))
     
-    # Instructions
-    elements.extend(create_instructions_section())
-    
-    # Footer
-    elements.append(Spacer(1, 20))
-    elements.append(create_footer_text())
+    elements.append(Spacer(1, 15))
+    elements.append(create_footer())
     
     doc.build(elements)
     buffer.seek(0)
@@ -356,80 +231,48 @@ def generate_formation_schedule_pdf(formation_name, groupe, niveau, departement,
 
 
 def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveillances, matricule="", specialite=""):
-    """
-    Génère un PDF du planning de surveillance - DESIGN UNIVERSITAIRE
-    Avec: Spécialité surveillée, Groupe, Département du groupe
-    """
+    """Planning professeur - PAYSAGE"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm,
-                           leftMargin=1.5*cm, rightMargin=1.5*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                           topMargin=1*cm, bottomMargin=1*cm,
+                           leftMargin=1*cm, rightMargin=1*cm)
     styles = create_styles()
     elements = []
     
     # Header
-    elements.extend(create_header_table(
-        "Examination Supervision Schedule",
-        [
-            ("Academic Year", "2025 – 2026"),
-            ("Semester", "Fall"),
-            ("Session", "Normal")
-        ]
-    ))
-    
-    # Ligne décorative
-    line = Table([[""]], colWidths=[17*cm])
-    line.setStyle(TableStyle([('LINEBELOW', (0, 0), (-1, -1), 1, BORDER_LIGHT)]))
-    elements.append(line)
-    elements.append(Spacer(1, 10))
-    
-    # Section titre
-    elements.append(create_section_title("Supervision Timetable"))
-    
-    # Info professeur
-    info_parts = [f"<b>Professor:</b> {prof_prenom} {prof_nom}"]
+    info = [f"Professeur: {prof_prenom} {prof_nom}", f"Département: {departement}"]
     if matricule:
-        info_parts.append(f"<b>ID:</b> {matricule}")
-    info_parts.append(f"<b>Department:</b> {departement}")
-    info_text = "  |  ".join(info_parts)
-    elements.append(Paragraph(info_text, styles['InfoText']))
-    if specialite:
-        elements.append(Paragraph(f"<b>Specialization:</b> {specialite}", styles['InfoText']))
-    elements.append(Spacer(1, 10))
+        info.append(f"Matricule: {matricule}")
+    elements.extend(create_header("Planning de Surveillance", info, styles, width=27*cm))
     
-    # Tableau des surveillances
     if surveillances:
-        headers = ['Date', 'Time', 'Module', 'Formation', 'Group', 'Dept', 'Room', 'Role']
+        headers = ['Date', 'Horaire', 'Module', 'Formation', 'Grp', 'Dept', 'Salle', 'Rôle']
         data = []
+        for s in surveillances:
+            data.append([
+                format_date(s.get('date')),
+                format_time(s.get('heure_debut'), s.get('heure_fin')),
+                truncate(s.get('module_nom', s.get('module_code', '')), 25),
+                truncate(s.get('formation', ''), 22),
+                s.get('groupe', ''),
+                truncate(s.get('departement', s.get('dept', '')), 12),
+                s.get('salle', ''),
+                truncate(s.get('role', ''), 12)
+            ])
         
-        for surv in surveillances:
-            date_str = format_date(surv.get('date'))
-            time = format_time(surv.get('heure_debut'), surv.get('heure_fin'))
-            module = surv.get('module_nom', surv.get('module_code', ''))
-            formation = surv.get('formation', '')
-            groupe = surv.get('groupe', '')
-            dept = surv.get('departement', surv.get('dept', ''))
-            room = surv.get('salle', '')
-            role = surv.get('role', 'Surveillant')
-            
-            data.append([date_str, time, module, formation, groupe, dept, room, role])
+        col_widths = [2.2*cm, 2.2*cm, 5*cm, 5*cm, 1.5*cm, 3*cm, 2*cm, 3*cm]
+        elements.append(create_table(headers, data, col_widths, styles))
         
-        col_widths = [2*cm, 2*cm, 3*cm, 3*cm, 1.5*cm, 2*cm, 1.5*cm, 2*cm]
-        table = create_exam_table(headers, data, col_widths)
-        elements.append(table)
-        
-        # Statistiques
-        elements.append(Spacer(1, 10))
+        # Stats
+        elements.append(Spacer(1, 8))
         nb_resp = sum(1 for s in surveillances if 'RESP' in str(s.get('role', '')).upper())
         elements.append(Paragraph(
-            f"<b>Total: {len(surveillances)} surveillances</b> ({nb_resp} as Chief, {len(surveillances)-nb_resp} as Assistant)",
+            f"<b>Total: {len(surveillances)} surveillances</b> ({nb_resp} responsable, {len(surveillances)-nb_resp} assistant)",
             styles['InfoText']
         ))
-    else:
-        elements.append(Paragraph("Aucune surveillance assignée.", styles['InfoText']))
     
-    # Footer
-    elements.append(Spacer(1, 30))
-    elements.append(create_footer_text())
+    elements.append(Spacer(1, 10))
+    elements.append(create_footer())
     
     doc.build(elements)
     buffer.seek(0)
@@ -437,75 +280,45 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
 
 
 def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens, salle_type="", batiment=""):
-    """
-    Génère un PDF du planning d'une salle - DESIGN UNIVERSITAIRE
-    Avec: Prof surveillant, Groupe, Formation
-    """
+    """Planning salle - PAYSAGE"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm,
-                           leftMargin=1.5*cm, rightMargin=1.5*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                           topMargin=1*cm, bottomMargin=1*cm,
+                           leftMargin=1*cm, rightMargin=1*cm)
     styles = create_styles()
     elements = []
     
     # Header
-    elements.extend(create_header_table(
-        "Examination Room Schedule",
-        [
-            ("Academic Year", "2025 – 2026"),
-            ("Semester", "Fall"),
-            ("Session", "Normal")
-        ]
-    ))
-    
-    # Ligne
-    line = Table([[""]], colWidths=[17*cm])
-    line.setStyle(TableStyle([('LINEBELOW', (0, 0), (-1, -1), 1, BORDER_LIGHT)]))
-    elements.append(line)
-    elements.append(Spacer(1, 10))
-    
-    # Section titre
-    elements.append(create_section_title("Room Occupation Schedule"))
-    
-    # Info salle
-    info_parts = [f"<b>Room:</b> {salle_nom} ({salle_code})"]
+    info = [f"Salle: {salle_nom} ({salle_code})", f"Capacité: {capacite} places"]
     if salle_type:
-        info_parts.append(f"<b>Type:</b> {salle_type}")
-    info_parts.append(f"<b>Capacity:</b> {capacite} seats")
-    info_text = "  |  ".join(info_parts)
-    elements.append(Paragraph(info_text, styles['InfoText']))
+        info.append(f"Type: {salle_type}")
     if batiment:
-        elements.append(Paragraph(f"<b>Building:</b> {batiment}", styles['InfoText']))
-    elements.append(Spacer(1, 10))
+        info.append(f"Bâtiment: {batiment}")
+    elements.extend(create_header("Planning de la Salle", info, styles, width=27*cm))
     
-    # Tableau
     if examens:
-        headers = ['Date', 'Time', 'Module', 'Formation', 'Group', 'Invigilator', 'Students']
+        headers = ['Date', 'Horaire', 'Module', 'Formation', 'Grp', 'Surveillant', 'Étudiants']
         data = []
+        for e in examens:
+            surv = e.get('surveillant') or e.get('prof_nom') or ''
+            data.append([
+                format_date(e.get('date')),
+                format_time(e.get('heure_debut'), e.get('heure_fin')),
+                truncate(e.get('module_nom', e.get('module_code', '')), 25),
+                truncate(e.get('formation', ''), 22),
+                e.get('groupe', ''),
+                truncate(surv, 18),
+                str(e.get('nb_etudiants', '—'))
+            ])
         
-        for exam in examens:
-            date_str = format_date(exam.get('date'))
-            time = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
-            module = exam.get('module_nom', exam.get('module_code', ''))
-            formation = exam.get('formation', '')
-            groupe = exam.get('groupe', '')
-            prof = exam.get('surveillant', exam.get('prof_nom', ''))
-            nb_etudiants = exam.get('nb_etudiants', '—')
-            
-            data.append([date_str, time, module, formation, groupe, prof, str(nb_etudiants)])
+        col_widths = [2.2*cm, 2.2*cm, 5*cm, 5*cm, 1.5*cm, 4.5*cm, 2*cm]
+        elements.append(create_table(headers, data, col_widths, styles))
         
-        col_widths = [2.2*cm, 2*cm, 3*cm, 3.5*cm, 1.5*cm, 3*cm, 1.8*cm]
-        table = create_exam_table(headers, data, col_widths)
-        elements.append(table)
-        
-        # Stats
-        elements.append(Spacer(1, 10))
-        elements.append(Paragraph(f"<b>Total: {len(examens)} examinations scheduled</b>", styles['InfoText']))
-    else:
-        elements.append(Paragraph("No examinations scheduled for this room.", styles['InfoText']))
+        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(f"<b>Total: {len(examens)} examens planifiés</b>", styles['InfoText']))
     
-    # Footer
-    elements.append(Spacer(1, 30))
-    elements.append(create_footer_text())
+    elements.append(Spacer(1, 10))
+    elements.append(create_footer())
     
     doc.build(elements)
     buffer.seek(0)
@@ -513,73 +326,32 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens, salle_t
 
 
 def generate_department_schedule_pdf(dept_name, formations_data):
-    """
-    Génère un PDF complet pour un département - DESIGN UNIVERSITAIRE
-    Une page par groupe avec toutes les infos
-    """
+    """Planning département - PAYSAGE avec toutes formations"""
     buffer = BytesIO()
-    doc = SimpleDocTemplate(buffer, pagesize=A4, topMargin=1.5*cm, bottomMargin=1.5*cm,
-                           leftMargin=1.5*cm, rightMargin=1.5*cm)
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                           topMargin=1*cm, bottomMargin=1*cm,
+                           leftMargin=1*cm, rightMargin=1*cm)
     styles = create_styles()
     elements = []
     
-    # ═══════════════════════════════════════════════════════════════════════════
-    # PAGE DE GARDE
-    # ═══════════════════════════════════════════════════════════════════════════
-    elements.append(Spacer(1, 60))
+    # Page de garde
+    elements.append(Spacer(1, 3*cm))
+    elements.append(Paragraph(f"· Planning des Examens ·", styles['UnivTitle']))
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(Paragraph(f"Département: {dept_name}", styles['SectionHeader']))
+    elements.append(Spacer(1, 0.5*cm))
+    elements.append(Paragraph(f"Session: S1 2025-2026", styles['SubTitle']))
+    elements.append(Spacer(1, 1*cm))
     
-    # Titre principal
-    elements.append(Paragraph("University Final Examination Schedule", styles['UnivTitle']))
-    elements.append(Spacer(1, 15))
-    
-    # Sous-titre
-    elements.append(Paragraph(
-        "Academic Year: 2025 – 2026  |  Semester: Fall  |  Faculty: Sciences",
-        styles['SubTitle']
-    ))
-    
-    # Ligne décorative
-    line_table = Table([["", "", ""]], colWidths=[5.7*cm, 5.7*cm, 5.7*cm], rowHeights=[3*mm])
-    line_table.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (0, 0), HEADER_RED),
-        ('BACKGROUND', (1, 0), (1, 0), HEADER_DARK),
-        ('BACKGROUND', (2, 0), (2, 0), HEADER_RED),
-    ]))
-    elements.append(Spacer(1, 20))
-    elements.append(line_table)
-    elements.append(Spacer(1, 30))
-    
-    # Info département
-    dept_title = Table([[f"Department: {dept_name}"]], colWidths=[14*cm])
-    dept_title.setStyle(TableStyle([
-        ('BACKGROUND', (0, 0), (-1, -1), BG_CREAM),
-        ('TEXTCOLOR', (0, 0), (-1, -1), HEADER_RED),
-        ('FONTNAME', (0, 0), (-1, -1), 'Times-Bold'),
-        ('FONTSIZE', (0, 0), (-1, -1), 18),
-        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-        ('TOPPADDING', (0, 0), (-1, -1), 15),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 15),
-        ('BOX', (0, 0), (-1, -1), 1, BORDER_LIGHT),
-    ]))
-    elements.append(dept_title)
-    elements.append(Spacer(1, 30))
-    
-    # Liste des formations
-    elements.append(Paragraph("<b>Formations included:</b>", styles['InfoText']))
-    elements.append(Spacer(1, 10))
-    
-    for i, (form_name, data) in enumerate(formations_data.items(), 1):
-        niveau = data.get('niveau', '')
-        nb_exams = len(data.get('exams', []))
-        elements.append(Paragraph(f"    {i}. {form_name} ({niveau}) - {nb_exams} exams", styles['InfoText']))
-    
-    elements.append(Spacer(1, 40))
-    elements.append(create_footer_text())
+    # Liste formations
+    nb_formations = len(formations_data)
+    total_exams = sum(len(d.get('exams', [])) for d in formations_data.values())
+    elements.append(Paragraph(f"<b>{nb_formations} formations • {total_exams} créneaux d'examen</b>", styles['InfoText']))
+    elements.append(Spacer(1, 3*cm))
+    elements.append(create_footer())
     elements.append(PageBreak())
     
-    # ═══════════════════════════════════════════════════════════════════════════
-    # PAGES PAR FORMATION/GROUPE
-    # ═══════════════════════════════════════════════════════════════════════════
+    # Une page par formation
     for formation_name, data in formations_data.items():
         niveau = data.get('niveau', '')
         examens = data.get('exams', [])
@@ -587,86 +359,41 @@ def generate_department_schedule_pdf(dept_name, formations_data):
         if not examens:
             continue
         
-        # Grouper par groupe
-        exams_by_group = {}
-        for exam in examens:
-            grp = exam.get('groupe', 'G01')
-            if grp not in exams_by_group:
-                exams_by_group[grp] = []
-            exams_by_group[grp].append(exam)
+        elements.extend(create_header(
+            "Planning des Examens",
+            [f"Formation: {formation_name}", f"Niveau: {niveau}", f"Dept: {dept_name}"],
+            styles, width=27*cm
+        ))
         
-        for groupe in sorted(exams_by_group.keys()):
-            group_exams = exams_by_group[groupe]
-            
-            # Header
-            elements.extend(create_header_table(
-                "University Final Examination Schedule",
-                [
-                    ("Academic Year", "2025 – 2026"),
-                    ("Semester", "Fall"),
-                    ("Department", dept_name)
-                ]
-            ))
-            
-            # Ligne
-            line = Table([[""]], colWidths=[17*cm])
-            line.setStyle(TableStyle([('LINEBELOW', (0, 0), (-1, -1), 1, BORDER_LIGHT)]))
-            elements.append(line)
-            elements.append(Spacer(1, 5))
-            
-            # Titre section
-            elements.append(create_section_title("Examination Timetable"))
-            
-            # Info
-            elements.append(Paragraph(
-                f"<b>Formation:</b> {formation_name}  |  <b>Level:</b> {niveau}  |  <b>Group:</b> {groupe}",
-                styles['InfoText']
-            ))
-            elements.append(Spacer(1, 10))
-            
-            # Tableau
-            headers = ['Date', 'Day', 'Time', 'Code', 'Module', 'Room', 'Invigilator']
-            data_rows = []
-            
-            for exam in group_exams:
-                date_str = format_date(exam.get('date'))
-                day = get_day_name(exam.get('date'))
-                time = format_time(exam.get('heure_debut'), exam.get('heure_fin'))
-                code = exam.get('module_code', '')
-                title = exam.get('module_nom', '')
-                room = exam.get('salle', '')
-                invig = exam.get('surveillant', exam.get('prof_nom', ''))
-                
-                data_rows.append([date_str, day, time, code, title, room, invig])
-            
-            col_widths = [2.3*cm, 2*cm, 2.3*cm, 1.8*cm, 4.5*cm, 2*cm, 2.1*cm]
-            table = create_exam_table(headers, data_rows, col_widths)
-            elements.append(table)
-            
-            # Instructions
-            elements.extend(create_instructions_section())
-            
-            # Footer
-            elements.append(Spacer(1, 15))
-            elements.append(create_footer_text())
-            elements.append(PageBreak())
+        headers = ['Date', 'Horaire', 'Code', 'Module', 'Groupe', 'Salle', 'Surveillant']
+        table_data = []
+        for e in examens:
+            table_data.append([
+                format_date(e.get('date')),
+                format_time(e.get('heure_debut'), e.get('heure_fin')),
+                truncate(e.get('module_code', ''), 10),
+                truncate(e.get('module_nom', ''), 30),
+                e.get('groupe', 'G01'),
+                e.get('salle', ''),
+                truncate(e.get('surveillant', ''), 18)
+            ])
+        
+        col_widths = [2.2*cm, 2.2*cm, 2*cm, 7*cm, 1.5*cm, 2*cm, 5*cm]
+        elements.append(create_table(headers, table_data, col_widths, styles))
+        elements.append(Spacer(1, 10))
+        elements.append(create_footer())
+        elements.append(PageBreak())
     
     doc.build(elements)
     buffer.seek(0)
     return buffer
 
 
-# ═══════════════════════════════════════════════════════════════════════════════
-# ALIASES for backward compatibility
-# ═══════════════════════════════════════════════════════════════════════════════
-
+# Aliases
 def generate_student_schedule_pdf(formation_name, groupe, niveau, examens, departement=""):
-    """Alias pour compatibilité"""
     return generate_formation_schedule_pdf(formation_name, groupe, niveau, departement, examens)
 
-
 def generate_multi_group_pdf(formation_name, niveau, exams_by_group, departement=""):
-    """Génère un PDF multi-groupes"""
     formations_data = {formation_name: {'niveau': niveau, 'exams': []}}
     for groupe, exams in exams_by_group.items():
         for exam in exams:
@@ -674,7 +401,5 @@ def generate_multi_group_pdf(formation_name, niveau, exams_by_group, departement
             formations_data[formation_name]['exams'].append(exam)
     return generate_department_schedule_pdf(departement or "Department", formations_data)
 
-
 def generate_department_pdf(dept_name, formations_data):
-    """Alias pour compatibilité"""
     return generate_department_schedule_pdf(dept_name, formations_data)
