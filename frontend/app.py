@@ -327,7 +327,7 @@ def get_formations():
 
 @st.cache_data(ttl=120)
 def get_profs():
-    return q("""SELECT p.id, p.nom, p.prenom, p.grade, d.nom as dept, d.id as dept_id
+    return q("""SELECT p.id, p.matricule, p.nom, p.prenom, p.grade, p.specialite, d.nom as dept, d.id as dept_id
                 FROM professeurs p JOIN departements d ON p.dept_id = d.id 
                 ORDER BY d.nom, p.nom LIMIT 250""")
 
@@ -586,150 +586,436 @@ elif "Configuration" in page:
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE: DONNÉES                                                               ║
+# ║  PAGE: DONNÉES - VERSION AMÉLIORÉE                                           ║
+# ║  Avec spécialités, bâtiments, filtres, dropdowns et suppression              ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 elif "Données" in page:
     st.markdown("""
     <div class="hero-gradient">
-        <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">📝 Saisie des Données</h1>
-        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Gérer départements, formations, professeurs, salles et modules</p>
+        <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">📝 Gestion des Données</h1>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Ajouter, modifier et supprimer les données de l'application</p>
     </div>
     """, unsafe_allow_html=True)
     
     tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["🏛️ Depts", "📚 Forms", "👨‍🏫 Profs", "🏢 Salles", "📖 Modules", "👨‍🎓 Étudiants"])
     
-    # Départements
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 1: DÉPARTEMENTS
+    # ══════════════════════════════════════════════════════════════════════════
     with tab1:
+        st.markdown("### 🏛️ Départements")
         depts = get_depts()
-        if depts: st.dataframe(pd.DataFrame(depts), use_container_width=True, hide_index=True)
-        with st.form("dept_form"):
-            c1, c2 = st.columns(2)
-            nom = c1.text_input("Nom", placeholder="Informatique")
-            code = c2.text_input("Code", placeholder="INFO")
-            if st.form_submit_button("➕ Ajouter", type="primary"):
-                if nom and code:
-                    insert("INSERT INTO departements (nom, code) VALUES (%s,%s)", (nom, code))
-                    st.success("✅"); st.cache_data.clear(); st.rerun()
-    
-    # Formations
-    with tab2:
-        formations = get_formations()
-        if formations:
-            df = pd.DataFrame([{'Nom': f['nom'], 'Code': f['code'], 'Niveau': f['niveau'], 'Dept': f['dept']} for f in formations[:30]])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        depts = get_depts()
+        
         if depts:
-            with st.form("form_form"):
-                c1, c2 = st.columns(2)
-                nom = c1.text_input("Nom", placeholder="Génie Logiciel")
-                code = c2.text_input("Code", placeholder="GL")
-                c3, c4 = st.columns(2)
-                dept_sel = c3.selectbox("Département", [d['nom'] for d in depts])
-                niveau = c4.selectbox("Niveau", ["L1", "L2", "L3", "M1", "M2"])
-                if st.form_submit_button("➕ Ajouter", type="primary"):
+            df = pd.DataFrame([{'ID': d['id'], 'Nom': d['nom'], 'Code': d['code']} for d in depts])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        col_add, col_del = st.columns(2)
+        
+        with col_add:
+            st.markdown("#### ➕ Ajouter")
+            with st.form("dept_form"):
+                nom = st.text_input("Nom", placeholder="Informatique")
+                code = st.text_input("Code", placeholder="INFO")
+                if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
                     if nom and code:
-                        did = next(d['id'] for d in depts if d['nom'] == dept_sel)
-                        insert("INSERT INTO formations (nom, code, dept_id, niveau, nb_modules) VALUES (%s,%s,%s,%s,6)", (f"{niveau} - {nom}", code, did, niveau))
-                        st.success("✅"); st.cache_data.clear(); st.rerun()
+                        insert("INSERT INTO departements (nom, code) VALUES (%s,%s)", (nom, code))
+                        st.success("✅ Département ajouté!"); st.cache_data.clear(); st.rerun()
+        
+        with col_del:
+            st.markdown("#### 🗑️ Supprimer")
+            if depts:
+                del_dept = st.selectbox("Sélectionner", [f"{d['code']} - {d['nom']}" for d in depts], key="del_dept")
+                if st.button("❌ Supprimer", key="btn_del_dept", type="secondary", use_container_width=True):
+                    code_to_del = del_dept.split(" - ")[0]
+                    try:
+                        q("DELETE FROM departements WHERE code=%s", (code_to_del,), fetch='none')
+                        st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Impossible de supprimer (données liées): {e}")
     
-    # Professeurs
-    with tab3:
-        profs = get_profs()
-        if profs:
-            df = pd.DataFrame([{'Nom': f"{p['prenom']} {p['nom']}", 'Grade': p['grade'], 'Dept': p['dept']} for p in profs[:30]])
-            st.dataframe(df, use_container_width=True, hide_index=True)
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 2: FORMATIONS
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab2:
+        st.markdown("### 📚 Formations")
         depts = get_depts()
-        if depts:
-            with st.form("prof_form"):
-                c1, c2 = st.columns(2)
-                nom = c1.text_input("Nom", placeholder="BENALI")
-                prenom = c2.text_input("Prénom", placeholder="Ahmed")
-                c3, c4 = st.columns(2)
-                dept_sel = c3.selectbox("Département", [d['nom'] for d in depts], key="pd")
-                grade = c4.selectbox("Grade", ["MAA", "MAB", "MCA", "MCB", "PR"])
-                if st.form_submit_button("➕ Ajouter", type="primary"):
-                    if nom and prenom:
-                        did = next(d['id'] for d in depts if d['nom'] == dept_sel)
-                        mat = f"P{did}{nom[:3].upper()}{len(profs) if profs else 0}"
-                        insert("INSERT INTO professeurs (matricule, nom, prenom, dept_id, grade) VALUES (%s,%s,%s,%s,%s)", (mat, nom, prenom, did, grade))
-                        st.success("✅"); st.cache_data.clear(); st.rerun()
-    
-    # Salles
-    with tab4:
-        salles = get_salles()
-        if salles:
-            df = pd.DataFrame([{'Nom': s['nom'], 'Code': s['code'], 'Type': s['type'], 'Capacité': s['capacite']} for s in salles])
-            st.dataframe(df, use_container_width=True, hide_index=True)
-        with st.form("salle_form"):
-            c1, c2 = st.columns(2)
-            nom = c1.text_input("Nom", placeholder="Amphi 1")
-            code = c2.text_input("Code", placeholder="AMP01")
-            c3, c4 = st.columns(2)
-            typ = c3.selectbox("Type", ["AMPHI", "SALLE", "LABO"])
-            cap = c4.number_input("Capacité", 10, 500, 100)
-            if st.form_submit_button("➕ Ajouter", type="primary"):
-                if nom and code:
-                    insert("INSERT INTO lieu_examen (nom, code, type, capacite, disponible) VALUES (%s,%s,%s,%s,TRUE)", (nom, code, typ, cap))
-                    st.success("✅"); st.cache_data.clear(); st.rerun()
-    
-    # Modules
-    with tab5:
         formations = get_formations()
+        
         if formations:
-            sel_f = st.selectbox("Formation", [f['nom'] for f in formations], key="mf")
+            # Filtre par département
+            filter_dept = st.selectbox("🔍 Filtrer par département", ["Tous"] + [d['nom'] for d in depts], key="filter_form_dept")
+            if filter_dept != "Tous":
+                formations = [f for f in formations if f['dept'] == filter_dept]
+            
+            df = pd.DataFrame([{'ID': f['id'], 'Nom': f['nom'], 'Code': f['code'], 'Niveau': f['niveau'], 'Dept': f['dept']} for f in formations[:50]])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        col_add, col_del = st.columns(2)
+        
+        with col_add:
+            st.markdown("#### ➕ Ajouter")
+            if depts:
+                with st.form("form_form"):
+                    nom = st.text_input("Nom", placeholder="Génie Logiciel")
+                    code = st.text_input("Code", placeholder="GL")
+                    c1, c2 = st.columns(2)
+                    dept_sel = c1.selectbox("Département", [d['nom'] for d in depts])
+                    niveau = c2.selectbox("Niveau", ["L1", "L2", "L3", "M1", "M2"])
+                    if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
+                        if nom and code:
+                            did = next(d['id'] for d in depts if d['nom'] == dept_sel)
+                            insert("INSERT INTO formations (nom, code, dept_id, niveau, nb_modules) VALUES (%s,%s,%s,%s,6)", (f"{niveau} - {nom}", code, did, niveau))
+                            st.success("✅ Formation ajoutée!"); st.cache_data.clear(); st.rerun()
+        
+        with col_del:
+            st.markdown("#### 🗑️ Supprimer")
+            if formations:
+                del_form = st.selectbox("Sélectionner", [f"{f['code']} - {f['nom']}" for f in formations[:30]], key="del_form")
+                col_single, col_bulk = st.columns(2)
+                if col_single.button("❌ Supprimer", key="btn_del_form", type="secondary", use_container_width=True):
+                    code_to_del = del_form.split(" - ")[0]
+                    try:
+                        q("DELETE FROM formations WHERE code=%s", (code_to_del,), fetch='none')
+                        st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Impossible: {e}")
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 3: PROFESSEURS (avec spécialité + autocomplete)
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab3:
+        st.markdown("### 👨‍🏫 Professeurs")
+        depts = get_depts()
+        profs = get_profs()
+        
+        # Récupérer les spécialités existantes pour l'autocomplete
+        existing_specs = q("SELECT DISTINCT specialite FROM professeurs WHERE specialite IS NOT NULL AND specialite != '' ORDER BY specialite")
+        spec_suggestions = [s['specialite'] for s in existing_specs] if existing_specs else []
+        
+        if profs:
+            # Filtre par département
+            filter_dept = st.selectbox("🔍 Filtrer par département", ["Tous"] + [d['nom'] for d in depts], key="filter_prof_dept")
+            profs_filtered = profs if filter_dept == "Tous" else [p for p in profs if p['dept'] == filter_dept]
+            
+            df = pd.DataFrame([{
+                'Matricule': p['matricule'],
+                'Nom': f"{p['prenom']} {p['nom']}", 
+                'Grade': p['grade'], 
+                'Spécialité': p.get('specialite') or '—',
+                'Dept': p['dept']
+            } for p in profs_filtered[:50]])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        col_add, col_del = st.columns(2)
+        
+        with col_add:
+            st.markdown("#### ➕ Ajouter un professeur")
+            if depts:
+                with st.form("prof_form"):
+                    c1, c2 = st.columns(2)
+                    nom = c1.text_input("Nom", placeholder="BENALI")
+                    prenom = c2.text_input("Prénom", placeholder="Ahmed")
+                    c3, c4 = st.columns(2)
+                    dept_sel = c3.selectbox("Département", [d['nom'] for d in depts], key="pd")
+                    grade = c4.selectbox("Grade", ["MAA", "MAB", "MCA", "MCB", "PR"])
+                    
+                    # Spécialité avec suggestions
+                    if spec_suggestions:
+                        st.caption(f"💡 Suggestions: {', '.join(spec_suggestions[:5])}")
+                    specialite = st.text_input("Spécialité", placeholder="Intelligence Artificielle, Réseaux...")
+                    
+                    if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
+                        if nom and prenom:
+                            did = next(d['id'] for d in depts if d['nom'] == dept_sel)
+                            mat = f"P{did}{nom[:3].upper()}{len(profs) if profs else 0}"
+                            insert("INSERT INTO professeurs (matricule, nom, prenom, dept_id, grade, specialite) VALUES (%s,%s,%s,%s,%s,%s)", 
+                                   (mat, nom, prenom, did, grade, specialite or None))
+                            st.success(f"✅ Professeur ajouté! Matricule: {mat}"); st.cache_data.clear(); st.rerun()
+        
+        with col_del:
+            st.markdown("#### 🗑️ Supprimer")
+            if profs:
+                # Suppression individuelle
+                profs_filtered = profs if filter_dept == "Tous" else [p for p in profs if p['dept'] == filter_dept]
+                del_prof = st.selectbox("Sélectionner", [f"{p['matricule']} - {p['prenom']} {p['nom']}" for p in profs_filtered[:30]], key="del_prof")
+                
+                c1, c2 = st.columns(2)
+                if c1.button("❌ Supprimer", key="btn_del_prof", type="secondary", use_container_width=True):
+                    mat_to_del = del_prof.split(" - ")[0]
+                    try:
+                        q("DELETE FROM surveillances WHERE professeur_id = (SELECT id FROM professeurs WHERE matricule=%s)", (mat_to_del,), fetch='none')
+                        q("DELETE FROM professeurs WHERE matricule=%s", (mat_to_del,), fetch='none')
+                        st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur: {e}")
+                
+                # Suppression en masse
+                with st.expander("🗑️ Suppression en masse"):
+                    st.warning("⚠️ Cette action est irréversible!")
+                    if filter_dept != "Tous":
+                        if st.button(f"❌ Supprimer tous les profs de {filter_dept}", key="bulk_del_prof"):
+                            dept_id = next(d['id'] for d in depts if d['nom'] == filter_dept)
+                            try:
+                                q("DELETE FROM surveillances WHERE professeur_id IN (SELECT id FROM professeurs WHERE dept_id=%s)", (dept_id,), fetch='none')
+                                q("DELETE FROM professeurs WHERE dept_id=%s", (dept_id,), fetch='none')
+                                st.success("✅ Tous supprimés!"); st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur: {e}")
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 4: SALLES (avec bâtiment + autocomplete)
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab4:
+        st.markdown("### 🏢 Salles & Amphithéâtres")
+        salles = get_salles()
+        
+        # Récupérer les bâtiments existants pour l'autocomplete
+        existing_buildings = q("SELECT DISTINCT batiment FROM lieu_examen WHERE batiment IS NOT NULL AND batiment != '' ORDER BY batiment")
+        building_suggestions = [b['batiment'] for b in existing_buildings] if existing_buildings else []
+        
+        if salles:
+            # Filtre par type
+            filter_type = st.selectbox("🔍 Filtrer par type", ["Tous", "AMPHI", "SALLE", "LABO"], key="filter_salle_type")
+            salles_filtered = salles if filter_type == "Tous" else [s for s in salles if s['type'] == filter_type]
+            
+            df = pd.DataFrame([{
+                'Nom': s['nom'], 
+                'Code': s['code'], 
+                'Type': s['type'], 
+                'Bâtiment': s.get('batiment') or '—',
+                'Capacité': s['capacite']
+            } for s in salles_filtered])
+            st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        col_add, col_del = st.columns(2)
+        
+        with col_add:
+            st.markdown("#### ➕ Ajouter une salle")
+            with st.form("salle_form"):
+                c1, c2 = st.columns(2)
+                nom = c1.text_input("Nom", placeholder="Amphi 1")
+                code = c2.text_input("Code", placeholder="AMP01")
+                c3, c4 = st.columns(2)
+                typ = c3.selectbox("Type", ["AMPHI", "SALLE", "LABO"])
+                cap = c4.number_input("Capacité", 10, 500, 100)
+                
+                # Bâtiment avec suggestions
+                if building_suggestions:
+                    st.caption(f"💡 Bâtiments existants: {', '.join(building_suggestions)}")
+                batiment = st.text_input("Bâtiment", placeholder="Bloc A, Nouveau Bloc...")
+                
+                if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
+                    if nom and code:
+                        insert("INSERT INTO lieu_examen (nom, code, type, capacite, batiment, disponible) VALUES (%s,%s,%s,%s,%s,TRUE)", 
+                               (nom, code, typ, cap, batiment or None))
+                        st.success("✅ Salle ajoutée!"); st.cache_data.clear(); st.rerun()
+        
+        with col_del:
+            st.markdown("#### 🗑️ Supprimer")
+            if salles:
+                salles_filtered = salles if filter_type == "Tous" else [s for s in salles if s['type'] == filter_type]
+                del_salle = st.selectbox("Sélectionner", [f"{s['code']} - {s['nom']}" for s in salles_filtered], key="del_salle")
+                
+                if st.button("❌ Supprimer", key="btn_del_salle", type="secondary", use_container_width=True):
+                    code_to_del = del_salle.split(" - ")[0]
+                    try:
+                        q("DELETE FROM lieu_examen WHERE code=%s", (code_to_del,), fetch='none')
+                        st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Impossible (examens planifiés): {e}")
+                
+                # Suppression par type
+                with st.expander("🗑️ Suppression en masse"):
+                    if filter_type != "Tous":
+                        if st.button(f"❌ Supprimer toutes les {filter_type}s", key="bulk_del_salle"):
+                            try:
+                                q("DELETE FROM lieu_examen WHERE type=%s AND id NOT IN (SELECT DISTINCT salle_id FROM examens)", (filter_type,), fetch='none')
+                                st.success("✅ Salles non utilisées supprimées!"); st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur: {e}")
+    
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 5: MODULES
+    # ══════════════════════════════════════════════════════════════════════════
+    with tab5:
+        st.markdown("### 📖 Modules")
+        depts = get_depts()
+        formations = get_formations()
+        
+        if formations:
+            # Double filtre: département puis formation
+            c1, c2 = st.columns(2)
+            filter_dept = c1.selectbox("🏛️ Département", ["Tous"] + [d['nom'] for d in depts], key="mod_filter_dept")
+            
+            if filter_dept != "Tous":
+                formations = [f for f in formations if f['dept'] == filter_dept]
+            
+            sel_f = c2.selectbox("📚 Formation", [f['nom'] for f in formations], key="mf")
             fid = next(f['id'] for f in formations if f['nom'] == sel_f)
             mods = get_modules(fid)
+            
             if mods:
                 df = pd.DataFrame([{'Code': m['code'], 'Nom': m['nom'], 'Crédits': m['credits'], 'Sem': m['semestre']} for m in mods])
                 st.dataframe(df, use_container_width=True, hide_index=True)
-            with st.form("mod_form"):
-                c1, c2 = st.columns(2)
-                nom = c1.text_input("Nom du module", placeholder="Programmation")
-                code = c2.text_input("Code", placeholder="PROG01")
-                c3, c4 = st.columns(2)
-                sem = c3.selectbox("Semestre", ["S1", "S2"])
-                cred = c4.number_input("Crédits", 1, 10, 4)
-                if st.form_submit_button("➕ Ajouter", type="primary"):
-                    if nom and code:
-                        insert("INSERT INTO modules (code, nom, credits, formation_id, semestre, coefficient) VALUES (%s,%s,%s,%s,%s,%s)", (code, nom, cred, fid, sem, cred/2))
-                        st.success("✅"); st.cache_data.clear(); st.rerun()
+            
+            col_add, col_del = st.columns(2)
+            
+            with col_add:
+                st.markdown("#### ➕ Ajouter")
+                with st.form("mod_form"):
+                    c1, c2 = st.columns(2)
+                    nom = c1.text_input("Nom du module", placeholder="Programmation")
+                    code = c2.text_input("Code", placeholder="PROG01")
+                    c3, c4 = st.columns(2)
+                    sem = c3.selectbox("Semestre", ["S1", "S2"])
+                    cred = c4.number_input("Crédits", 1, 10, 4)
+                    if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
+                        if nom and code:
+                            insert("INSERT INTO modules (code, nom, credits, formation_id, semestre, coefficient) VALUES (%s,%s,%s,%s,%s,%s)", (code, nom, cred, fid, sem, cred/2))
+                            st.success("✅ Module ajouté!"); st.cache_data.clear(); st.rerun()
+            
+            with col_del:
+                st.markdown("#### 🗑️ Supprimer")
+                if mods:
+                    del_mod = st.selectbox("Sélectionner", [f"{m['code']} - {m['nom']}" for m in mods], key="del_mod")
+                    if st.button("❌ Supprimer", key="btn_del_mod", type="secondary", use_container_width=True):
+                        code_to_del = del_mod.split(" - ")[0]
+                        try:
+                            q("DELETE FROM examens WHERE module_id = (SELECT id FROM modules WHERE code=%s)", (code_to_del,), fetch='none')
+                            q("DELETE FROM inscriptions WHERE module_id = (SELECT id FROM modules WHERE code=%s)", (code_to_del,), fetch='none')
+                            q("DELETE FROM modules WHERE code=%s", (code_to_del,), fetch='none')
+                            st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erreur: {e}")
     
-    # Étudiants
+    # ══════════════════════════════════════════════════════════════════════════
+    # TAB 6: ÉTUDIANTS (avec filtre dept, dropdown groupe, suppression)
+    # ══════════════════════════════════════════════════════════════════════════
     with tab6:
-        formations = get_formations()
+        st.markdown("### 👨‍🎓 Étudiants")
+        depts = get_depts()
+        
+        # Double filtre: département puis formation
+        c1, c2 = st.columns(2)
+        filter_dept = c1.selectbox("🏛️ Département", ["Tous"] + [d['nom'] for d in depts], key="etud_filter_dept")
+        
+        if filter_dept != "Tous":
+            formations = q("SELECT f.*, d.nom as dept FROM formations f JOIN departements d ON f.dept_id=d.id WHERE d.nom=%s ORDER BY f.niveau, f.nom", (filter_dept,))
+        else:
+            formations = get_formations()
+        
         if formations:
-            sel_f = st.selectbox("Formation", [f['nom'] for f in formations], key="ef")
+            sel_f = c2.selectbox("📚 Formation", [f['nom'] for f in formations], key="ef")
             fid = next(f['id'] for f in formations if f['nom'] == sel_f)
-            etuds = q("SELECT matricule, nom, prenom, COALESCE(groupe,'G01') as groupe FROM etudiants WHERE formation_id=%s ORDER BY groupe, nom LIMIT 50", (fid,))
+            
+            # Récupérer les groupes existants pour cette formation
+            existing_groups = q("SELECT DISTINCT COALESCE(groupe, 'G01') as g FROM etudiants WHERE formation_id=%s ORDER BY g", (fid,))
+            group_list = [g['g'] for g in existing_groups] if existing_groups else []
+            
+            # Filtre par groupe
+            c1, c2 = st.columns([3, 1])
+            filter_groupe = c1.selectbox("👥 Groupe", ["Tous"] + group_list, key="filter_groupe") if group_list else "Tous"
+            
+            # Récupérer les étudiants
+            if filter_groupe == "Tous":
+                etuds = q("SELECT id, matricule, nom, prenom, COALESCE(groupe,'G01') as groupe FROM etudiants WHERE formation_id=%s ORDER BY groupe, nom LIMIT 100", (fid,))
+            else:
+                etuds = q("SELECT id, matricule, nom, prenom, COALESCE(groupe,'G01') as groupe FROM etudiants WHERE formation_id=%s AND (groupe=%s OR (groupe IS NULL AND %s='G01')) ORDER BY nom LIMIT 100", (fid, filter_groupe, filter_groupe))
+            
             if etuds:
-                st.dataframe(pd.DataFrame(etuds), use_container_width=True, hide_index=True)
-            with st.form("etud_form"):
-                c1, c2 = st.columns(2)
-                nom = c1.text_input("Nom", placeholder="AMRANI")
-                prenom = c2.text_input("Prénom", placeholder="Mohamed")
-                groupe = st.text_input("Groupe", "G01")
-                if st.form_submit_button("➕ Ajouter", type="primary"):
-                    if nom and prenom:
-                        mat = f"E{fid:04d}{len(etuds) if etuds else 0:04d}"
-                        insert("INSERT INTO etudiants (matricule, nom, prenom, formation_id, groupe, promo) VALUES (%s,%s,%s,%s,%s,2025)", (mat, nom, prenom, fid, groupe))
-                        st.success(f"✅ Matricule: {mat}"); st.cache_data.clear(); st.rerun()
+                c2.metric("Total", len(etuds))
+                df = pd.DataFrame([{'Matricule': e['matricule'], 'Nom': e['nom'], 'Prénom': e['prenom'], 'Groupe': e['groupe']} for e in etuds])
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("Aucun étudiant dans cette formation/groupe")
+            
+            col_add, col_del = st.columns(2)
+            
+            with col_add:
+                st.markdown("#### ➕ Ajouter un étudiant")
+                with st.form("etud_form"):
+                    c1, c2 = st.columns(2)
+                    nom = c1.text_input("Nom", placeholder="AMRANI")
+                    prenom = c2.text_input("Prénom", placeholder="Mohamed")
+                    
+                    # Groupe: dropdown avec suggestions + option nouveau
+                    if group_list:
+                        st.caption(f"💡 Groupes existants: {', '.join(group_list)}")
+                    groupe = st.text_input("Groupe", value=group_list[0] if group_list else "G01", placeholder="G01, G02...")
+                    
+                    if st.form_submit_button("➕ Ajouter", type="primary", use_container_width=True):
+                        if nom and prenom:
+                            # Générer matricule unique
+                            count = q("SELECT COUNT(*) as c FROM etudiants WHERE formation_id=%s", (fid,), fetch='one')
+                            mat = f"E{fid:04d}{(count['c'] if count else 0):04d}"
+                            insert("INSERT INTO etudiants (matricule, nom, prenom, formation_id, groupe, promo) VALUES (%s,%s,%s,%s,%s,2025)", (mat, nom, prenom, fid, groupe))
+                            st.success(f"✅ Étudiant ajouté! Matricule: {mat}"); st.cache_data.clear(); st.rerun()
+            
+            with col_del:
+                st.markdown("#### 🗑️ Supprimer")
+                if etuds:
+                    del_etud = st.selectbox("Sélectionner", [f"{e['matricule']} - {e['nom']} {e['prenom']}" for e in etuds[:50]], key="del_etud")
+                    
+                    c1, c2 = st.columns(2)
+                    if c1.button("❌ Supprimer", key="btn_del_etud", type="secondary", use_container_width=True):
+                        mat_to_del = del_etud.split(" - ")[0]
+                        try:
+                            q("DELETE FROM inscriptions WHERE etudiant_id = (SELECT id FROM etudiants WHERE matricule=%s)", (mat_to_del,), fetch='none')
+                            q("DELETE FROM etudiants WHERE matricule=%s", (mat_to_del,), fetch='none')
+                            st.success("✅ Supprimé!"); st.cache_data.clear(); st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ Erreur: {e}")
+                    
+                    # Suppression en masse par groupe
+                    with st.expander("🗑️ Suppression en masse"):
+                        st.warning("⚠️ Cette action est irréversible!")
+                        if filter_groupe != "Tous":
+                            if st.button(f"❌ Supprimer tout le groupe {filter_groupe}", key="bulk_del_etud_grp"):
+                                try:
+                                    q("DELETE FROM inscriptions WHERE etudiant_id IN (SELECT id FROM etudiants WHERE formation_id=%s AND groupe=%s)", (fid, filter_groupe), fetch='none')
+                                    q("DELETE FROM etudiants WHERE formation_id=%s AND groupe=%s", (fid, filter_groupe), fetch='none')
+                                    st.success("✅ Groupe supprimé!"); st.cache_data.clear(); st.rerun()
+                                except Exception as e:
+                                    st.error(f"❌ Erreur: {e}")
+                        
+                        if st.button(f"❌ Supprimer TOUS les étudiants de {sel_f}", key="bulk_del_etud_all"):
+                            try:
+                                q("DELETE FROM inscriptions WHERE etudiant_id IN (SELECT id FROM etudiants WHERE formation_id=%s)", (fid,), fetch='none')
+                                q("DELETE FROM etudiants WHERE formation_id=%s", (fid,), fetch='none')
+                                st.success("✅ Tous les étudiants supprimés!"); st.cache_data.clear(); st.rerun()
+                            except Exception as e:
+                                st.error(f"❌ Erreur: {e}")
             
             st.divider()
-            if st.button("⚡ Inscrire tous aux modules S1", type="secondary"):
+            
+            # Section inscriptions
+            st.markdown("#### ⚡ Inscriptions aux modules")
+            c1, c2 = st.columns(2)
+            if c1.button("⚡ Inscrire tous aux modules S1", type="secondary", use_container_width=True):
                 es = q("SELECT id FROM etudiants WHERE formation_id=%s", (fid,))
                 ms = q("SELECT id FROM modules WHERE formation_id=%s AND semestre='S1'", (fid,))
                 if es and ms:
                     cnt = 0
                     for e in es:
                         for m in ms:
-                            try: insert("INSERT IGNORE INTO inscriptions (etudiant_id, module_id, annee_universitaire, statut) VALUES (%s,%s,'2025/2026','INSCRIT')", (e['id'], m['id'])); cnt += 1
+                            try: 
+                                insert("INSERT IGNORE INTO inscriptions (etudiant_id, module_id, annee_universitaire, statut) VALUES (%s,%s,'2025/2026','INSCRIT')", (e['id'], m['id']))
+                                cnt += 1
                             except: pass
-                    st.success(f"✅ {cnt} inscriptions!"); st.cache_data.clear()
+                    st.success(f"✅ {cnt} inscriptions créées!"); st.cache_data.clear()
+            
+            if c2.button("🗑️ Supprimer toutes les inscriptions", type="secondary", use_container_width=True):
+                try:
+                    q("DELETE FROM inscriptions WHERE etudiant_id IN (SELECT id FROM etudiants WHERE formation_id=%s)", (fid,), fetch='none')
+                    st.success("✅ Inscriptions supprimées!"); st.cache_data.clear()
+                except Exception as e:
+                    st.error(f"❌ Erreur: {e}")
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  PAGE: GÉNÉRATION                                                            ║
+# ║  PAGE: GÉNÉRATION - AVEC RESET ET STATS CORRIGÉES                            ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 elif "Génération" in page:
@@ -755,46 +1041,73 @@ elif "Génération" in page:
         c1, c2, c3 = st.columns(3)
         c1.info(f"📅 Début: {session['date_debut']}")
         c2.info(f"📅 Fin: {session['date_fin']}")
-        c3.info(f"🕐 {len(creneaux)} créneaux")
+        c3.info(f"🕐 {len(creneaux)} créneaux/jour")
         
+        # Stats corrigées: modules planifiés (distinct) vs créneaux utilisés
         stats = q("""SELECT 
-            (SELECT COUNT(*) FROM modules WHERE semestre='S1') as mods,
+            (SELECT COUNT(DISTINCT id) FROM modules WHERE semestre='S1') as mods,
             (SELECT COUNT(*) FROM lieu_examen WHERE disponible=TRUE) as salles,
-            (SELECT COUNT(*) FROM examens WHERE session_id=%s) as existing
-        """, (sid,), fetch='one')
+            (SELECT COUNT(DISTINCT module_id) FROM examens WHERE session_id=%s) as modules_planifies,
+            (SELECT COUNT(*) FROM examens WHERE session_id=%s) as total_creneaux
+        """, (sid, sid), fetch='one')
         
         if stats:
             st.markdown(f"""
-            <div class="stats-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="stats-grid" style="grid-template-columns: repeat(4, 1fr);">
                 <div class="stat-box"><span class="stat-icon">📖</span><div class="stat-value">{stats['mods'] or 0}</div><div class="stat-label">Modules S1</div></div>
                 <div class="stat-box"><span class="stat-icon">🏢</span><div class="stat-value">{stats['salles'] or 0}</div><div class="stat-label">Salles</div></div>
-                <div class="stat-box"><span class="stat-icon">📅</span><div class="stat-value">{stats['existing'] or 0}</div><div class="stat-label">Examens existants</div></div>
+                <div class="stat-box"><span class="stat-icon">✅</span><div class="stat-value">{stats['modules_planifies'] or 0}</div><div class="stat-label">Modules planifiés</div></div>
+                <div class="stat-box"><span class="stat-icon">📅</span><div class="stat-value">{stats['total_creneaux'] or 0}</div><div class="stat-label">Créneaux utilisés</div></div>
             </div>
             """, unsafe_allow_html=True)
+            
+            # Afficher info sur la relation modules/créneaux
+            if stats['modules_planifies'] and stats['total_creneaux']:
+                ratio = stats['total_creneaux'] / stats['modules_planifies']
+                st.caption(f"ℹ️ En moyenne {ratio:.1f} groupes par module (même examen, salles différentes)")
         
         st.divider()
         
-        if st.button("🚀 GÉNÉRER L'EMPLOI DU TEMPS", type="primary", use_container_width=True):
-            with st.spinner("⏳ Génération en cours..."):
-                try:
-                    q("DELETE FROM surveillances WHERE examen_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,))
-                    q("DELETE FROM conflits WHERE examen1_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,))
-                    q("DELETE FROM examens WHERE session_id=%s", (sid,))
-                    
-                    from services.optimization import run_optimization
-                    start = datetime.now()
-                    r = run_optimization(sid)
-                    elapsed = (datetime.now() - start).total_seconds()
-                    
-                    st.balloons()
-                    st.success(f"✅ Terminé en {elapsed:.1f}s!")
-                    c1, c2, c3 = st.columns(3)
-                    c1.metric("📅 Planifiés", r.get('scheduled', 0))
-                    c2.metric("⚠️ Conflits", r.get('conflicts', 0))
-                    c3.metric("📊 Taux", f"{r.get('success_rate', 0):.1f}%")
-                    st.cache_data.clear()
-                except Exception as e:
-                    st.error(f"❌ {e}")
+        # Section Génération
+        col1, col2 = st.columns([2, 1])
+        
+        with col1:
+            if st.button("🚀 GÉNÉRER L'EMPLOI DU TEMPS", type="primary", use_container_width=True):
+                with st.spinner("⏳ Génération en cours..."):
+                    try:
+                        # Nettoyer les anciens examens
+                        q("DELETE FROM surveillances WHERE examen_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,), fetch='none')
+                        q("DELETE FROM conflits WHERE examen1_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,), fetch='none')
+                        q("DELETE FROM examens WHERE session_id=%s", (sid,), fetch='none')
+                        
+                        from services.optimization import run_optimization
+                        start = datetime.now()
+                        r = run_optimization(sid)
+                        elapsed = (datetime.now() - start).total_seconds()
+                        
+                        st.balloons()
+                        st.success(f"✅ Terminé en {elapsed:.1f}s!")
+                        c1, c2, c3 = st.columns(3)
+                        c1.metric("📅 Planifiés", r.get('scheduled', 0))
+                        c2.metric("⚠️ Conflits", r.get('conflicts', 0))
+                        c3.metric("📊 Taux", f"{r.get('success_rate', 0):.1f}%")
+                        st.cache_data.clear()
+                    except Exception as e:
+                        st.error(f"❌ {e}")
+        
+        with col2:
+            with st.expander("🔄 Réinitialiser"):
+                st.warning("⚠️ Supprimer tous les examens de cette session")
+                if st.button("🗑️ Réinitialiser", type="secondary", use_container_width=True):
+                    try:
+                        q("DELETE FROM surveillances WHERE examen_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,), fetch='none')
+                        q("DELETE FROM conflits WHERE examen1_id IN (SELECT id FROM examens WHERE session_id=%s)", (sid,), fetch='none')
+                        q("DELETE FROM examens WHERE session_id=%s", (sid,), fetch='none')
+                        st.success("✅ Session réinitialisée!")
+                        st.cache_data.clear()
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"❌ Erreur: {e}")
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
