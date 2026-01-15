@@ -275,61 +275,53 @@ class ExamScheduler:
         slot: ExamSlot
     ) -> Optional[List[Tuple[GroupExam, Dict, int]]]:
         """
-        FONCTION CRITIQUE: Trouve salles ET surveillants pour TOUS les groupes
-        
-        Retourne: Liste de (group_exam, room, prof_id) où chaque prof est DIFFÉRENT
+        RÈGLE STRICTE: 
+        - Chaque groupe = Sa propre salle + Son propre surveillant
+        - Un prof ne peut JAMAIS surveiller 2 groupes en même temps
+        - Pas de regroupement dans un amphi
         """
-        total_students = sum(g.nb_etudiants for g in group_exams)
         dept_id = group_exams[0].dept_id
         
-        # ═══════════════════════════════════════════════════════════════
-        # OPTION 1: Une seule grande salle pour tous les groupes
-        # CRITIQUE: Créer une entrée pour CHAQUE groupe (même salle, même créneau)
-        # ═══════════════════════════════════════════════════════════════
-        for room in self.rooms:
-            if room['capacite'] >= total_students:
-                if slot not in self.room_schedule[room['id']]:
-                    # Trouver UN surveillant
-                    prof_id = self._find_supervisor(dept_id, slot, set())
-                    if prof_id:
-                        # CORRECTION: Retourner TOUS les groupes, pas juste le premier!
-                        # Chaque groupe aura son propre enregistrement avec la même salle
-                        return [(group, room, prof_id) for group in group_exams]
-        
-        # ═══════════════════════════════════════════════════════════════
-        # OPTION 2: Salles séparées avec surveillants DIFFÉRENTS
-        # ═══════════════════════════════════════════════════════════════
         assignments = []
         used_rooms = set()
-        used_profs = set()  # CRITIQUE: Suivre les profs déjà utilisés!
+        used_profs = set()  # Profs déjà assignés CE créneau pour CE module
         
-        # Trier par nombre d'étudiants décroissant
+        # Trier par nombre d'étudiants décroissant (plus gros groupes d'abord)
         sorted_groups = sorted(group_exams, key=lambda x: x.nb_etudiants, reverse=True)
         
         for group in sorted_groups:
-            # Trouver une salle libre
+            # ═══════════════════════════════════════════════════════════
+            # TROUVER UNE SALLE LIBRE pour CE groupe uniquement
+            # ═══════════════════════════════════════════════════════════
             room_found = None
             for room in self.rooms:
+                # Salle déjà utilisée par un autre groupe de ce module?
                 if room['id'] in used_rooms:
                     continue
+                # Salle déjà occupée ce créneau?
                 if slot in self.room_schedule[room['id']]:
                     continue
+                # Capacité insuffisante?
                 if room['capacite'] < group.nb_etudiants:
                     continue
+                
                 room_found = room
                 break
             
             if not room_found:
-                return None  # Pas assez de salles
+                return None  # Impossible: pas assez de salles disponibles
             
-            # CRITIQUE: Trouver un surveillant DIFFÉRENT
+            # ═══════════════════════════════════════════════════════════
+            # TROUVER UN SURVEILLANT DIFFÉRENT pour CE groupe
+            # ═══════════════════════════════════════════════════════════
             prof_id = self._find_supervisor(dept_id, slot, used_profs)
             if not prof_id:
-                return None  # Pas assez de surveillants disponibles
+                return None  # Impossible: pas assez de profs disponibles
             
+            # Enregistrer l'assignation
             assignments.append((group, room_found, prof_id))
             used_rooms.add(room_found['id'])
-            used_profs.add(prof_id)  # Marquer comme utilisé!
+            used_profs.add(prof_id)
         
         return assignments
     
