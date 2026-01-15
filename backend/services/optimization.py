@@ -284,6 +284,7 @@ class ExamScheduler:
         
         # ═══════════════════════════════════════════════════════════════
         # OPTION 1: Une seule grande salle pour tous les groupes
+        # CRITIQUE: Créer une entrée pour CHAQUE groupe (même salle, même créneau)
         # ═══════════════════════════════════════════════════════════════
         for room in self.rooms:
             if room['capacite'] >= total_students:
@@ -291,8 +292,9 @@ class ExamScheduler:
                     # Trouver UN surveillant
                     prof_id = self._find_supervisor(dept_id, slot, set())
                     if prof_id:
-                        # Une seule salle avec un seul surveillant
-                        return [(group_exams[0], room, prof_id)]
+                        # CORRECTION: Retourner TOUS les groupes, pas juste le premier!
+                        # Chaque groupe aura son propre enregistrement avec la même salle
+                        return [(group, room, prof_id) for group in group_exams]
         
         # ═══════════════════════════════════════════════════════════════
         # OPTION 2: Salles séparées avec surveillants DIFFÉRENTS
@@ -467,18 +469,25 @@ class ExamScheduler:
             """, (self.session_id,))
             cursor.execute("DELETE FROM examens WHERE session_id = %s", (self.session_id,))
             
+            # Vérifier si la colonne groupe existe, sinon la créer
+            try:
+                cursor.execute("SELECT groupe FROM examens LIMIT 1")
+            except:
+                cursor.execute("ALTER TABLE examens ADD COLUMN groupe VARCHAR(20) DEFAULT NULL")
+                print("   ➕ Colonne 'groupe' ajoutée")
+            
             for se in self.scheduled_exams:
-                # Insérer l'examen - colonnes minimales qui existent
+                # Insérer l'examen AVEC le groupe pour permettre les PDFs par groupe
                 cursor.execute("""
-                    INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, nb_etudiants_prevus)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, nb_etudiants_prevus, groupe)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (
                     se.module_id, self.session_id, se.salle_id,
-                    se.slot.date, se.slot.creneau_id, se.nb_etudiants
+                    se.slot.date, se.slot.creneau_id, se.nb_etudiants, se.groupe
                 ))
                 exam_id = cursor.lastrowid
                 
-                # Insérer la surveillance - colonnes minimales (role par défaut='SURVEILLANT')
+                # Insérer la surveillance
                 if se.prof_id:
                     cursor.execute("""
                         INSERT INTO surveillances (examen_id, professeur_id, role)

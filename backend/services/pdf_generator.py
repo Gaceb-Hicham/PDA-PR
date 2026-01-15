@@ -394,12 +394,65 @@ def generate_student_schedule_pdf(formation_name, groupe, niveau, examens, depar
     return generate_formation_schedule_pdf(formation_name, groupe, niveau, departement, examens)
 
 def generate_multi_group_pdf(formation_name, niveau, exams_by_group, departement=""):
-    formations_data = {formation_name: {'niveau': niveau, 'exams': []}}
-    for groupe, exams in exams_by_group.items():
-        for exam in exams:
-            exam['groupe'] = groupe
-            formations_data[formation_name]['exams'].append(exam)
-    return generate_department_schedule_pdf(departement or "Department", formations_data)
+    """
+    Génère UN PDF avec une PAGE SÉPARÉE pour chaque groupe.
+    Chaque page contient: Formation, Groupe, Niveau, et liste des examens.
+    """
+    from reportlab.platypus import PageBreak
+    
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
+                           topMargin=1*cm, bottomMargin=1*cm,
+                           leftMargin=1*cm, rightMargin=1*cm)
+    styles = create_styles()
+    elements = []
+    
+    # Trier les groupes
+    sorted_groups = sorted(exams_by_group.keys())
+    
+    for idx, groupe in enumerate(sorted_groups):
+        examens = exams_by_group[groupe]
+        
+        # Header pour ce groupe
+        elements.extend(create_header(
+            "Planning des Examens",
+            [
+                f"Formation: {formation_name}",
+                f"Groupe: {groupe}",
+                f"Niveau: {niveau}",
+                f"Département: {departement or '—'}"
+            ],
+            styles, width=27*cm
+        ))
+        
+        if examens:
+            headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle', 'Surveillant']
+            data = []
+            for exam in examens:
+                data.append([
+                    format_date(exam.get('date')),
+                    format_time(exam.get('heure_debut'), exam.get('heure_fin')),
+                    truncate(exam.get('module_code', ''), 10),
+                    truncate(exam.get('module_nom', ''), 35),
+                    exam.get('salle', ''),
+                    truncate(exam.get('surveillant', '') or '—', 20)
+                ])
+            
+            col_widths = [2.5*cm, 2.5*cm, 2*cm, 9*cm, 2*cm, 5*cm]
+            elements.append(create_table(headers, data, col_widths, styles))
+        else:
+            elements.append(Paragraph("Aucun examen programmé", styles['Normal']))
+        
+        elements.append(Spacer(1, 15))
+        elements.append(create_footer())
+        
+        # Saut de page sauf pour le dernier groupe
+        if idx < len(sorted_groups) - 1:
+            elements.append(PageBreak())
+    
+    doc.build(elements)
+    buffer.seek(0)
+    return buffer
 
 def generate_department_pdf(dept_name, formations_data):
     return generate_department_schedule_pdf(dept_name, formations_data)
