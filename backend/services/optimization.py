@@ -1,9 +1,9 @@
 """
 Algorithme d'optimisation pour la génération des emplois du temps d'examens
-VERSION AVEC GESTION DES GROUPES:
-- Même examen pour tous les groupes d'une formation
-- Même date et heure
-- Salle DIFFÉRENTE pour chaque groupe (ou une grande salle si possible)
+VERSION CORRIGÉE v5.2:
+- Même examen pour tous les groupes d'une formation = même date/heure
+- Salle DIFFÉRENTE pour chaque groupe
+- Surveillant DIFFÉRENT pour chaque salle (UN prof = UNE salle)
 """
 import sys
 import os
@@ -47,21 +47,21 @@ class GroupExam:
     module_nom: str
     formation_id: int
     dept_id: int
-    groupe: str  # Le groupe (G01, G02, etc.)
-    nb_etudiants: int  # Étudiants de CE groupe uniquement
+    groupe: str
+    nb_etudiants: int
     duree_minutes: int
     priority_score: float = 0.0
 
 
 @dataclass
 class ScheduledExam:
-    """Représente un examen planifié"""
+    """Représente un examen planifié - UN prof par salle"""
     module_id: int
     salle_id: int
     slot: ExamSlot
     nb_etudiants: int
     groupe: str = None
-    prof_id: int = None
+    prof_id: int = None  # Surveillant de CETTE salle uniquement
 
 
 @dataclass
@@ -76,29 +76,41 @@ class Conflict:
 
 
 # ============================================================================
-# SCHEDULER CLASS - AVEC GESTION DES GROUPES
+# SCHEDULER CLASS - AVEC SURVEILLANCE CORRECTE
 # ============================================================================
 
 class ExamScheduler:
-    """Classe principale pour l'optimisation des emplois du temps"""
+    """
+    Planificateur d'examens - Version corrigée
+    
+    RÈGLE CRITIQUE: Un professeur ne peut surveiller qu'UNE salle à la fois!
+    Donc si un module a 3 groupes dans 3 salles différentes, il faut 3 surveillants.
+    """
     
     def __init__(self, session_id: int):
         self.session_id = session_id
         self.session_info = self._load_session()
-        self.exams_by_module: Dict[int, List[GroupExam]] = defaultdict(list)  # module_id -> list of group exams
+        self.exams_by_module: Dict[int, List[GroupExam]] = defaultdict(list)
         self.scheduled_exams: List[ScheduledExam] = []
         self.conflicts: List[Conflict] = []
         
         # Contraintes
         self.room_schedule: Dict[int, Dict[ExamSlot, int]] = defaultdict(dict)
         self.student_schedule: Dict[int, Set[date]] = defaultdict(set)
-        self.prof_schedule: Dict[int, Dict[date, int]] = defaultdict(lambda: defaultdict(int))
+        
+        # CRITIQUE: Suivi des profs par créneau PRÉCIS (pas juste par jour)
+        self.prof_slot_busy: Dict[Tuple[int, ExamSlot], bool] = {}  # (prof_id, slot) -> busy
+        self.prof_daily_count: Dict[int, Dict[date, int]] = defaultdict(lambda: defaultdict(int))
         
         # Données
         self.rooms: List[Dict] = []
-        self.professors: Dict[int, List[Dict]] = {}
+        self.professors: List[Dict] = []
+        self.professors_by_dept: Dict[int, List[Dict]] = defaultdict(list)
         self.slots: List[ExamSlot] = []
         
+        # Distribution équitable
+        self.prof_total_supervisions: Dict[int, int] = defaultdict(int)
+    
     def _load_session(self) -> Dict:
         result = execute_query(
             "SELECT * FROM sessions_examen WHERE id = %s",
@@ -109,31 +121,37 @@ class ExamScheduler:
         return result
     
     def _load_rooms(self):
-        """Charge les salles, triées par capacité décroissante"""
+        """Charge les salles disponibles"""
         self.rooms = execute_query("""
-            SELECT * FROM lieu_examen 
+            SELECT id, code, nom, capacite, type 
+            FROM lieu_examen 
             WHERE disponible = TRUE 
             ORDER BY capacite DESC
         """) or []
-        print(f"📍 {len(self.rooms)} salles chargées")
+        print(f"📍 {len(self.rooms)} salles disponibles")
     
     def _load_professors(self):
-        all_profs = execute_query("SELECT * FROM professeurs") or []
-        for prof in all_profs:
-            dept_id = prof['dept_id']
-            if dept_id not in self.professors:
-                self.professors[dept_id] = []
-            self.professors[dept_id].append(prof)
-        print(f"👨‍🏫 {len(all_profs)} professeurs chargés")
+        """Charge TOUS les professeurs"""
+        result = execute_query("SELECT id, nom, prenom, dept_id FROM professeurs") or []
+        self.professors = list(result)
+        
+        for prof in self.professors:
+            dept_id = prof.get('dept_id')
+            if dept_id:
+                self.professors_by_dept[dept_id].append(prof)
+        
+        print(f"👨‍🏫 {len(self.professors)} professeurs disponibles")
     
     def _generate_slots(self):
+        """Génère les créneaux d'examen"""
         creneaux = execute_query("SELECT * FROM creneaux_horaires ORDER BY ordre") or []
         
         current_date = self.session_info['date_debut']
         end_date = self.session_info['date_fin']
         
         while current_date <= end_date:
-            if current_date.weekday() != 4:  # Exclure vendredi
+            # Exclure weekends (samedi=5, dimanche=6) et vendredi=4 si nécessaire
+            if current_date.weekday() < 5:  # Lundi à vendredi
                 for creneau in creneaux:
                     self.slots.append(ExamSlot(
                         date=current_date,
@@ -146,34 +164,29 @@ class ExamScheduler:
         print(f"📅 {len(self.slots)} créneaux générés")
     
     def _load_exams_by_group(self):
-        """
-        Charge les examens PAR GROUPE:
-        - Pour chaque module, on récupère les groupes distincts
-        - Chaque groupe devient un "examen" séparé qui aura sa propre salle
-        """
-        # Récupérer tous les modules avec les groupes et le nombre d'étudiants par groupe
+        """Charge les examens PAR GROUPE"""
+        annee = self.session_info.get('annee_universitaire', '2024-2025')
+        
         group_data = execute_query("""
             SELECT 
                 m.id AS module_id,
                 m.code AS module_code,
                 m.nom AS module_nom,
                 m.formation_id,
-                m.duree_examen_minutes,
                 f.dept_id,
                 COALESCE(e.groupe, 'G01') AS groupe,
-                COUNT(DISTINCT i.etudiant_id) AS nb_etudiants
+                COUNT(DISTINCT i.etudiant_id) AS nb_etudiants,
+                COALESCE(m.duree_examen_minutes, 90) AS duree_minutes
             FROM modules m
             JOIN formations f ON m.formation_id = f.id
-            LEFT JOIN inscriptions i ON i.module_id = m.id 
-                AND i.annee_universitaire = %s
+            LEFT JOIN inscriptions i ON i.module_id = m.id
             LEFT JOIN etudiants e ON i.etudiant_id = e.id
             WHERE m.semestre = 'S1'
-            GROUP BY m.id, m.code, m.nom, m.formation_id, m.duree_examen_minutes, f.dept_id, e.groupe
+            GROUP BY m.id, m.code, m.nom, m.formation_id, f.dept_id, e.groupe
             HAVING nb_etudiants > 0
-            ORDER BY m.formation_id, m.id, groupe
-        """, (self.session_info['annee_universitaire'],)) or []
+            ORDER BY nb_etudiants DESC, m.id, groupe
+        """) or []
         
-        # Organiser par module
         for row in group_data:
             exam = GroupExam(
                 module_id=row['module_id'],
@@ -183,112 +196,181 @@ class ExamScheduler:
                 dept_id=row['dept_id'],
                 groupe=row['groupe'],
                 nb_etudiants=row['nb_etudiants'],
-                duree_minutes=row['duree_examen_minutes'] or 90,
+                duree_minutes=row['duree_minutes'],
                 priority_score=row['nb_etudiants']
             )
             self.exams_by_module[row['module_id']].append(exam)
         
         total_groups = sum(len(groups) for groups in self.exams_by_module.values())
-        print(f"📝 {len(self.exams_by_module)} modules avec {total_groups} groupes à planifier")
+        print(f"📝 {len(self.exams_by_module)} modules ({total_groups} groupes)")
     
-    def _find_rooms_for_groups(self, group_exams: List[GroupExam], slot: ExamSlot) -> Optional[List[Tuple[GroupExam, Dict]]]:
+    def _is_prof_available_for_slot(self, prof_id: int, slot: ExamSlot) -> bool:
         """
-        Trouve des salles pour TOUS les groupes d'un module au même créneau.
-        Retourne None si impossible, sinon liste de (group_exam, room)
+        CRITIQUE: Vérifie si un prof est disponible à ce créneau PRÉCIS
+        Un prof ne peut PAS être dans deux salles au même moment!
         """
-        total_students = sum(g.nb_etudiants for g in group_exams)
+        # Déjà occupé à ce créneau?
+        if self.prof_slot_busy.get((prof_id, slot), False):
+            return False
         
-        # Option 1: Une seule grande salle pour tous les groupes
-        for room in self.rooms:
-            if room['capacite'] >= total_students and slot not in self.room_schedule[room['id']]:
-                # Une seule salle suffit!
-                return [(group_exams[0], room)]  # On utilise le premier groupe comme référence
+        # Limite quotidienne?
+        max_per_day = OPTIMIZATION_CONFIG.get('max_exam_per_professor_per_day', 3)
+        if self.prof_daily_count[prof_id][slot.date] >= max_per_day:
+            return False
         
-        # Option 2: Une salle séparée par groupe
-        assignments = []
-        used_rooms = set()
-        
-        # Trier les groupes par taille décroissante
-        sorted_groups = sorted(group_exams, key=lambda x: x.nb_etudiants, reverse=True)
-        
-        for group in sorted_groups:
-            room_found = False
-            for room in self.rooms:
-                if room['id'] in used_rooms:
-                    continue
-                if room['capacite'] < group.nb_etudiants:
-                    continue
-                if slot in self.room_schedule[room['id']]:
-                    continue
-                
-                assignments.append((group, room))
-                used_rooms.add(room['id'])
-                room_found = True
-                break
-            
-            if not room_found:
-                return None  # Impossible de trouver une salle pour ce groupe
-        
-        return assignments
-    
-    def _check_student_constraint_for_module(self, module_id: int, slot: ExamSlot) -> bool:
-        """Vérifie la contrainte étudiant pour un module entier"""
-        students = execute_query("""
-            SELECT DISTINCT etudiant_id FROM inscriptions 
-            WHERE module_id = %s AND annee_universitaire = %s
-        """, (module_id, self.session_info['annee_universitaire'])) or []
-        
-        for student in students:
-            if slot.date in self.student_schedule[student['etudiant_id']]:
-                return False
         return True
     
-    def _assign_supervisor(self, dept_id: int, slot: ExamSlot) -> Optional[int]:
-        """Assigne un surveillant"""
-        dept_profs = self.professors.get(dept_id, [])
-        random.shuffle(dept_profs)
+    def _find_supervisor(self, dept_id: int, slot: ExamSlot, excluded_profs: Set[int]) -> Optional[int]:
+        """
+        Trouve UN surveillant disponible pour UN créneau
         
-        for prof in dept_profs:
-            if self.prof_schedule[prof['id']][slot.date] >= OPTIMIZATION_CONFIG.get('max_exam_per_professor_per_day', 3):
-                continue
-            return prof['id']
+        Args:
+            dept_id: Département prioritaire
+            slot: Créneau horaire
+            excluded_profs: Profs déjà assignés à ce même créneau (pour d'autres salles)
         
-        # Chercher dans autres départements
-        for did, profs in self.professors.items():
-            if did == dept_id:
+        Returns:
+            ID du prof ou None
+        """
+        # Trier par nombre total de surveillances (distribution équitable)
+        sorted_profs = sorted(
+            self.professors,
+            key=lambda p: self.prof_total_supervisions[p['id']]
+        )
+        
+        # D'abord chercher dans le département
+        for prof in sorted_profs:
+            if prof.get('dept_id') != dept_id:
                 continue
-            random.shuffle(profs)
-            for prof in profs:
-                if self.prof_schedule[prof['id']][slot.date] >= OPTIMIZATION_CONFIG.get('max_exam_per_professor_per_day', 3):
-                    continue
+            if prof['id'] in excluded_profs:
+                continue
+            if self._is_prof_available_for_slot(prof['id'], slot):
+                return prof['id']
+        
+        # Ensuite dans les autres départements
+        for prof in sorted_profs:
+            if prof.get('dept_id') == dept_id:
+                continue
+            if prof['id'] in excluded_profs:
+                continue
+            if self._is_prof_available_for_slot(prof['id'], slot):
                 return prof['id']
         
         return None
     
-    def _update_constraints_for_module(self, module_id: int, assignments: List[Tuple[GroupExam, Dict]], slot: ExamSlot, prof_id: int):
-        """Met à jour les contraintes après planification"""
-        # Marquer les salles comme occupées
-        for group_exam, room in assignments:
-            self.room_schedule[room['id']][slot] = module_id
-        
-        # Marquer les étudiants
+    def _check_student_availability(self, module_id: int, slot: ExamSlot) -> bool:
+        """Vérifie qu'aucun étudiant n'a déjà un examen ce jour"""
         students = execute_query("""
-            SELECT DISTINCT etudiant_id FROM inscriptions 
-            WHERE module_id = %s AND annee_universitaire = %s
-        """, (module_id, self.session_info['annee_universitaire'])) or []
+            SELECT DISTINCT etudiant_id FROM inscriptions WHERE module_id = %s
+        """, (module_id,)) or []
         
-        for student in students:
-            self.student_schedule[student['etudiant_id']].add(slot.date)
+        for s in students:
+            if slot.date in self.student_schedule[s['etudiant_id']]:
+                return False
+        return True
+    
+    def _find_rooms_and_supervisors(
+        self, 
+        group_exams: List[GroupExam], 
+        slot: ExamSlot
+    ) -> Optional[List[Tuple[GroupExam, Dict, int]]]:
+        """
+        FONCTION CRITIQUE: Trouve salles ET surveillants pour TOUS les groupes
         
-        # Prof
-        self.prof_schedule[prof_id][slot.date] += 1
+        Retourne: Liste de (group_exam, room, prof_id) où chaque prof est DIFFÉRENT
+        """
+        total_students = sum(g.nb_etudiants for g in group_exams)
+        dept_id = group_exams[0].dept_id
+        
+        # ═══════════════════════════════════════════════════════════════
+        # OPTION 1: Une seule grande salle pour tous les groupes
+        # ═══════════════════════════════════════════════════════════════
+        for room in self.rooms:
+            if room['capacite'] >= total_students:
+                if slot not in self.room_schedule[room['id']]:
+                    # Trouver UN surveillant
+                    prof_id = self._find_supervisor(dept_id, slot, set())
+                    if prof_id:
+                        # Une seule salle avec un seul surveillant
+                        return [(group_exams[0], room, prof_id)]
+        
+        # ═══════════════════════════════════════════════════════════════
+        # OPTION 2: Salles séparées avec surveillants DIFFÉRENTS
+        # ═══════════════════════════════════════════════════════════════
+        assignments = []
+        used_rooms = set()
+        used_profs = set()  # CRITIQUE: Suivre les profs déjà utilisés!
+        
+        # Trier par nombre d'étudiants décroissant
+        sorted_groups = sorted(group_exams, key=lambda x: x.nb_etudiants, reverse=True)
+        
+        for group in sorted_groups:
+            # Trouver une salle libre
+            room_found = None
+            for room in self.rooms:
+                if room['id'] in used_rooms:
+                    continue
+                if slot in self.room_schedule[room['id']]:
+                    continue
+                if room['capacite'] < group.nb_etudiants:
+                    continue
+                room_found = room
+                break
+            
+            if not room_found:
+                return None  # Pas assez de salles
+            
+            # CRITIQUE: Trouver un surveillant DIFFÉRENT
+            prof_id = self._find_supervisor(dept_id, slot, used_profs)
+            if not prof_id:
+                return None  # Pas assez de surveillants disponibles
+            
+            assignments.append((group, room_found, prof_id))
+            used_rooms.add(room_found['id'])
+            used_profs.add(prof_id)  # Marquer comme utilisé!
+        
+        return assignments
+    
+    def _commit_assignments(
+        self, 
+        module_id: int, 
+        assignments: List[Tuple[GroupExam, Dict, int]], 
+        slot: ExamSlot
+    ):
+        """Enregistre les assignations et met à jour les contraintes"""
+        for group, room, prof_id in assignments:
+            # Créer l'examen planifié
+            self.scheduled_exams.append(ScheduledExam(
+                module_id=module_id,
+                salle_id=room['id'],
+                slot=slot,
+                nb_etudiants=group.nb_etudiants,
+                groupe=group.groupe,
+                prof_id=prof_id
+            ))
+            
+            # Marquer salle occupée
+            self.room_schedule[room['id']][slot] = module_id
+            
+            # CRITIQUE: Marquer le prof comme occupé à ce créneau
+            self.prof_slot_busy[(prof_id, slot)] = True
+            self.prof_daily_count[prof_id][slot.date] += 1
+            self.prof_total_supervisions[prof_id] += 1
+        
+        # Marquer les étudiants du module
+        students = execute_query("""
+            SELECT DISTINCT etudiant_id FROM inscriptions WHERE module_id = %s
+        """, (module_id,)) or []
+        
+        for s in students:
+            self.student_schedule[s['etudiant_id']].add(slot.date)
     
     def schedule(self, progress_callback=None) -> Tuple[int, int, float]:
-        """Exécute l'algorithme de planification avec gestion des groupes"""
+        """Exécute l'algorithme de planification"""
         start_time = time.time()
         
         print("\n" + "="*60)
-        print("🚀 DÉMARRAGE DE L'OPTIMISATION (AVEC GROUPES)")
+        print("🚀 OPTIMISATION v5.2 - Surveillants différents par salle")
         print("="*60)
         
         self._load_rooms()
@@ -300,52 +382,47 @@ class ExamScheduler:
             print("⚠️ Aucun examen à planifier")
             return 0, 0, time.time() - start_time
         
-        scheduled_count = 0
-        conflict_count = 0
+        if not self.rooms:
+            print("⚠️ Aucune salle disponible")
+            return 0, 0, time.time() - start_time
         
-        print(f"\n⏳ Planification de {len(self.exams_by_module)} modules...")
+        if not self.professors:
+            print("⚠️ Aucun professeur disponible")
+            return 0, 0, time.time() - start_time
         
-        # Trier les modules par nombre total d'étudiants (priorité)
+        # Trier les modules par nombre total d'étudiants
         sorted_modules = sorted(
             self.exams_by_module.items(),
             key=lambda x: sum(g.nb_etudiants for g in x[1]),
             reverse=True
         )
         
-        for module_id, group_exams in sorted_modules:
-            scheduled = False
-            first_group = group_exams[0]  # Pour les infos communes
+        scheduled_count = 0
+        conflict_count = 0
+        total = len(sorted_modules)
+        
+        print(f"\n⏳ Planification de {total} modules...")
+        
+        for idx, (module_id, group_exams) in enumerate(sorted_modules):
+            if progress_callback and idx % 50 == 0:
+                progress_callback(idx / total)
             
-            # Essayer chaque créneau
+            first_group = group_exams[0]
+            scheduled = False
+            
             for slot in self.slots:
-                # Vérifier contrainte étudiants
-                if not self._check_student_constraint_for_module(module_id, slot):
+                # Vérifier disponibilité étudiants
+                if not self._check_student_availability(module_id, slot):
                     continue
                 
-                # Trouver des salles pour TOUS les groupes
-                assignments = self._find_rooms_for_groups(group_exams, slot)
+                # Trouver salles ET surveillants (différents!)
+                assignments = self._find_rooms_and_supervisors(group_exams, slot)
                 if not assignments:
                     continue
                 
-                # Assigner un surveillant
-                prof_id = self._assign_supervisor(first_group.dept_id, slot)
-                if not prof_id:
-                    continue
-                
-                # Planifier! Créer un examen par groupe/salle
-                for group_exam, room in assignments:
-                    se = ScheduledExam(
-                        module_id=module_id,
-                        salle_id=room['id'],
-                        slot=slot,
-                        nb_etudiants=group_exam.nb_etudiants,
-                        groupe=group_exam.groupe,
-                        prof_id=prof_id
-                    )
-                    self.scheduled_exams.append(se)
-                    scheduled_count += 1
-                
-                self._update_constraints_for_module(module_id, assignments, slot, prof_id)
+                # Valider!
+                self._commit_assignments(module_id, assignments, slot)
+                scheduled_count += len(assignments)
                 scheduled = True
                 break
             
@@ -355,7 +432,7 @@ class ExamScheduler:
                     examen1_id=module_id,
                     examen2_id=None,
                     entite_id=None,
-                    description=f"Impossible de planifier: {first_group.module_code} - {first_group.module_nom}",
+                    description=f"Impossible: {first_group.module_code} - {first_group.module_nom}",
                     severite='CRITIQUE'
                 ))
                 conflict_count += 1
@@ -363,33 +440,45 @@ class ExamScheduler:
         execution_time = time.time() - start_time
         
         print(f"\n✅ Planification terminée en {execution_time:.2f}s")
-        print(f"   - Examens créés: {scheduled_count} (avec salles séparées par groupe)")
+        print(f"   - Examens planifiés: {scheduled_count}")
         print(f"   - Modules non planifiés: {conflict_count}")
+        
+        # Stats surveillances
+        if self.prof_total_supervisions:
+            values = list(self.prof_total_supervisions.values())
+            if values:
+                print(f"   - Surveillances/prof: min={min(values)}, max={max(values)}, moy={sum(values)/len(values):.1f}")
         
         return scheduled_count, conflict_count, execution_time
     
     def save_to_database(self):
-        """Sauvegarde les examens planifiés dans la base de données"""
+        """Sauvegarde les examens planifiés"""
         if not self.scheduled_exams:
             print("⚠️ Aucun examen à sauvegarder")
             return
         
-        print("\n💾 Sauvegarde des examens et surveillances...")
+        print("\n💾 Sauvegarde des examens...")
         
         with get_cursor() as cursor:
+            # Nettoyer anciens examens
+            cursor.execute("""
+                DELETE FROM surveillances WHERE examen_id IN 
+                (SELECT id FROM examens WHERE session_id = %s)
+            """, (self.session_id,))
+            cursor.execute("DELETE FROM examens WHERE session_id = %s", (self.session_id,))
+            
             for se in self.scheduled_exams:
-                # Insérer l'examen
+                # Insérer l'examen - colonnes minimales qui existent
                 cursor.execute("""
-                    INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, 
-                                        nb_etudiants_prevus, statut, groupe)
-                    VALUES (%s, %s, %s, %s, %s, %s, 'PLANIFIE', %s)
+                    INSERT INTO examens (module_id, session_id, salle_id, date_examen, creneau_id, nb_etudiants_prevus)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
                     se.module_id, self.session_id, se.salle_id,
-                    se.slot.date, se.slot.creneau_id, se.nb_etudiants, se.groupe
+                    se.slot.date, se.slot.creneau_id, se.nb_etudiants
                 ))
                 exam_id = cursor.lastrowid
                 
-                # Insérer la surveillance
+                # Insérer la surveillance - colonnes minimales (role par défaut='SURVEILLANT')
                 if se.prof_id:
                     cursor.execute("""
                         INSERT INTO surveillances (examen_id, professeur_id, role)
@@ -404,11 +493,14 @@ class ExamScheduler:
             return
         
         with get_cursor() as cursor:
+            cursor.execute("DELETE FROM conflits WHERE session_id = %s", (self.session_id,))
+            
             for conflict in self.conflicts:
                 cursor.execute("""
-                    INSERT INTO conflits (examen1_id, examen2_id, type_conflit, description, severite)
-                    VALUES (%s, %s, %s, %s, %s)
+                    INSERT INTO conflits (session_id, examen1_id, examen2_id, type_conflit, description, severite)
+                    VALUES (%s, %s, %s, %s, %s, %s)
                 """, (
+                    self.session_id,
                     conflict.examen1_id, conflict.examen2_id,
                     conflict.type, conflict.description, conflict.severite
                 ))
@@ -416,23 +508,28 @@ class ExamScheduler:
 
 def run_optimization(session_id: int) -> Dict:
     """Fonction principale pour lancer l'optimisation"""
-    scheduler = ExamScheduler(session_id)
-    
-    scheduled, conflicts, exec_time = scheduler.schedule()
-    
-    if scheduled > 0:
-        scheduler.save_to_database()
-    
-    if conflicts > 0:
-        scheduler.save_conflicts_to_database()
-    
-    total_modules = len(scheduler.exams_by_module)
-    
-    return {
-        'scheduled': scheduled,
-        'conflicts': conflicts,
-        'execution_time': exec_time,
-        'success_rate': (total_modules - conflicts) / max(total_modules, 1) * 100 if total_modules > 0 else 0,
-        'modules_planifies': total_modules - conflicts,
-        'total_modules': total_modules
-    }
+    try:
+        scheduler = ExamScheduler(session_id)
+        scheduled, conflicts, exec_time = scheduler.schedule()
+        
+        if scheduled > 0:
+            scheduler.save_to_database()
+        
+        if conflicts > 0:
+            scheduler.save_conflicts_to_database()
+        
+        total_modules = len(scheduler.exams_by_module)
+        
+        return {
+            'success': True,
+            'scheduled': scheduled,
+            'conflicts': conflicts,
+            'execution_time': exec_time,
+            'success_rate': ((total_modules - conflicts) / max(total_modules, 1)) * 100,
+            'modules_planifies': total_modules - conflicts,
+            'total_modules': total_modules
+        }
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return {'success': False, 'error': str(e)}
