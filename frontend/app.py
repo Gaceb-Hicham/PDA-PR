@@ -589,7 +589,7 @@ elif "Configuration" in page:
         st.info("🔧 Ces paramètres contrôlent la génération des plannings. Modifiez-les puis régénérez.")
         
         # ════════════════════════════════════════════════════════
-        # PARAMÈTRES SIMPLES ET EFFICACES
+        # SECTION 1: PLANNING & REPOS
         # ════════════════════════════════════════════════════════
         
         st.markdown("---")
@@ -601,7 +601,7 @@ elif "Configuration" in page:
                 "🛌 Jours de repos entre examens",
                 options=[0, 1, 2],
                 index=0,
-                format_func=lambda x: f"{x} jour(s) de repos" if x > 0 else "Pas de repos (examens consécutifs)",
+                format_func=lambda x: f"{x} jour(s) de repos" if x > 0 else "Pas de repos",
                 help="Ex: 1 = Lundi examen, Mardi repos, Mercredi examen..."
             )
             st.session_state.rest_days = rest_days
@@ -611,56 +611,123 @@ elif "Configuration" in page:
                 "📝 Max examens par étudiant par jour",
                 options=[1, 2],
                 index=0,
-                format_func=lambda x: f"{x} examen(s) maximum",
-                help="Recommandé: 1 pour éviter la surcharge"
+                format_func=lambda x: f"{x} examen(s) maximum"
             )
             st.session_state.max_exam_student = max_exam
         
+        # ════════════════════════════════════════════════════════
+        # SECTION 2: DIVISION PAR DÉPARTEMENT
+        # ════════════════════════════════════════════════════════
+        
         st.markdown("---")
-        st.markdown("#### 👨‍🏫 Surveillants par Salle")
+        st.markdown("#### 🏛️ Division par Département")
+        
+        dept_split = st.checkbox(
+            "✅ Activer l'alternance des départements",
+            value=False,
+            help="Les départements du Groupe A passent examen Jour 1, repos Jour 2. Le Groupe B fait l'inverse."
+        )
+        st.session_state.dept_splitting = dept_split
+        
+        if dept_split:
+            st.info("📊 **Mode Alternance:** Regroupez les départements qui passeront les examens ensemble")
+            
+            # Charger les départements
+            all_depts = q("SELECT id, nom FROM departements ORDER BY nom") or []
+            dept_names = [d['nom'] for d in all_depts]
+            
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                st.markdown("**🔵 Groupe A** (Examen Jours 1, 3, 5...)")
+                group_a = st.multiselect(
+                    "Départements Groupe A",
+                    options=dept_names,
+                    default=dept_names[:len(dept_names)//2] if dept_names else [],
+                    key="widget_group_a",
+                    label_visibility="collapsed"
+                )
+            
+            with col2:
+                st.markdown("**🟠 Groupe B** (Examen Jours 2, 4, 6...)")
+                # Filtrer pour ne montrer que ceux non sélectionnés dans A
+                remaining = [d for d in dept_names if d not in group_a]
+                group_b = st.multiselect(
+                    "Départements Groupe B",
+                    options=remaining,
+                    default=remaining,
+                    key="widget_group_b",
+                    label_visibility="collapsed"
+                )
+            
+            # Sauvegarder les IDs des départements (clés différentes des widgets!)
+            group_a_ids = [d['id'] for d in all_depts if d['nom'] in group_a]
+            group_b_ids = [d['id'] for d in all_depts if d['nom'] in group_b]
+            st.session_state.dept_group_a = group_a_ids
+            st.session_state.dept_group_b = group_b_ids
+            
+            # Afficher résumé
+            if group_a or group_b:
+                st.success(f"""
+                **📅 Planification:**
+                - 🔵 **Groupe A** ({len(group_a)} depts): Examen Lundi, Repos Mardi, Examen Mercredi...
+                - 🟠 **Groupe B** ({len(group_b)} depts): Repos Lundi, Examen Mardi, Repos Mercredi...
+                """)
+        
+        # ════════════════════════════════════════════════════════
+        # SECTION 3: SURVEILLANTS (SAISIE MANUELLE)
+        # ════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.markdown("#### 👨‍🏫 Nombre de Surveillants par Salle")
+        st.caption("Saisissez le nombre exact de surveillants souhaité")
         
         col1, col2 = st.columns(2)
         with col1:
-            sv_small = st.selectbox(
+            sv_small = st.number_input(
                 "🏢 Petite salle (< 100 places)",
-                options=[1, 2],
-                index=0,
-                format_func=lambda x: f"{x} surveillant(s)"
+                min_value=1, max_value=10, value=1, step=1,
+                help="Nombre de surveillants par petite salle"
             )
             st.session_state.supervisors_small_room = sv_small
         
         with col2:
-            sv_amphi = st.selectbox(
+            sv_amphi = st.number_input(
                 "🏛️ Amphithéâtre (> 100 places)",
-                options=[1, 2, 3],
-                index=1,
-                format_func=lambda x: f"{x} surveillant(s)"
+                min_value=1, max_value=10, value=2, step=1,
+                help="Nombre de surveillants par amphithéâtre"
             )
             st.session_state.supervisors_amphi = sv_amphi
         
+        # ════════════════════════════════════════════════════════
+        # SECTION 4: NIVEAUX
+        # ════════════════════════════════════════════════════════
+        
         st.markdown("---")
         st.markdown("#### 🎓 Niveaux à Planifier")
+        st.caption("Sélectionnez les niveaux d'études à inclure dans la planification")
         
         niveaux = st.multiselect(
-            "Sélectionnez les niveaux",
+            "Niveaux",
             options=["L1", "L2", "L3", "M1", "M2"],
-            default=["L1", "L2", "L3", "M1", "M2"]
+            default=["L1", "L2", "L3", "M1", "M2"],
+            label_visibility="collapsed"
         )
         st.session_state.selected_levels = niveaux if niveaux else ["L1", "L2", "L3", "M1", "M2"]
         
         # Valeurs par défaut pour les autres paramètres
-        st.session_state.max_exam_prof = 3
+        st.session_state.max_exam_prof = 5
         st.session_state.fair_distribution = True
         st.session_state.dept_priority = True
-        st.session_state.division_by_dept = False
-        st.session_state.division_by_level = False
         
         st.markdown("---")
         
         # RÉSUMÉ CLAIR
         st.markdown("#### ✅ Configuration Actuelle")
+        division_text = "✅ Division département activée" if st.session_state.get('dept_splitting', False) else "❌ Division département désactivée"
         st.success(f"""
-        **📅 Repos:** {st.session_state.rest_days} jour(s) entre chaque examen  
+        **📅 Repos:** {st.session_state.rest_days} jour(s) entre examens  
+        **🏛️ Départements:** {division_text}  
         **📝 Étudiants:** Max {st.session_state.max_exam_student} examen/jour  
         **👨‍🏫 Surveillants:** {st.session_state.supervisors_small_room} (salle) / {st.session_state.supervisors_amphi} (amphi)  
         **🎓 Niveaux:** {', '.join(st.session_state.selected_levels)}
@@ -1186,10 +1253,11 @@ elif "Génération" in page:
                         # Préparer les paramètres de configuration
                         opt_config = {
                             'max_exam_per_student_per_day': st.session_state.get('max_exam_student', 1),
-                            'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 3),
+                            'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 5),
                             'rest_days': st.session_state.get('rest_days', 0),
-                            'division_by_dept': st.session_state.get('division_by_dept', False),
-                            'division_by_level': st.session_state.get('division_by_level', False),
+                            'dept_splitting': st.session_state.get('dept_splitting', False),
+                            'dept_group_a': st.session_state.get('dept_group_a', []),
+                            'dept_group_b': st.session_state.get('dept_group_b', []),
                             'selected_levels': st.session_state.get('selected_levels', ['L1','L2','L3','M1','M2']),
                             'supervisors_small_room': st.session_state.get('supervisors_small_room', 1),
                             'supervisors_amphi': st.session_state.get('supervisors_amphi', 2),

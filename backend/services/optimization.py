@@ -156,13 +156,13 @@ class ExamScheduler:
         print(f"👨‍🏫 {len(self.professors)} professeurs disponibles")
     
     def _generate_slots(self):
-        """Génère les créneaux avec support jours de repos et division par département"""
+        """Génère les créneaux avec support jours de repos et division département"""
         creneaux = execute_query("SELECT * FROM creneaux_horaires ORDER BY ordre") or []
         
         start_date = self.session_info['date_debut']
         end_date = self.session_info['date_fin']
         rest_days = self.config.get('rest_days', 0)
-        division_by_dept = self.config.get('division_by_dept', False)
+        dept_splitting = self.config.get('dept_splitting', False)
         
         # Générer tous les jours ouvrables
         work_days = []
@@ -192,17 +192,28 @@ class ExamScheduler:
                     heure_fin=str(c['heure_fin'])
                 ))
         
-        # Division par département: assigner des jours différents
-        if division_by_dept and self.departments:
-            dept_ids = [d['id'] for d in self.departments]
-            unique_days = sorted(set(s.date for s in self.slots))
+        # Division par département basée sur les groupes A et B
+        # Groupe A: jours 1, 3, 5... / Groupe B: jours 2, 4, 6...
+        if dept_splitting:
+            dept_group_a = self.config.get('dept_group_a', [])
+            dept_group_b = self.config.get('dept_group_b', [])
             
-            for idx, dept_id in enumerate(dept_ids):
-                # Chaque département a ses jours (rotation)
-                dept_days = [unique_days[i] for i in range(len(unique_days)) if i % len(dept_ids) == idx % len(dept_ids)]
-                self.slots_by_dept[dept_id] = [s for s in self.slots if s.date in dept_days]
-                
-            print(f"📅 Division par département activée: ~{len(unique_days)//len(dept_ids)} jours/dept")
+            unique_days = sorted(set(s.date for s in self.slots))
+            odd_days = [d for i, d in enumerate(unique_days) if i % 2 == 0]  # Jours 1, 3, 5...
+            even_days = [d for i, d in enumerate(unique_days) if i % 2 == 1]  # Jours 2, 4, 6...
+            
+            odd_slots = [s for s in self.slots if s.date in odd_days]
+            even_slots = [s for s in self.slots if s.date in even_days]
+            
+            # Assigner les créneaux selon le groupe
+            for dept_id in dept_group_a:
+                self.slots_by_dept[dept_id] = odd_slots  # Groupe A = jours impairs
+            
+            for dept_id in dept_group_b:
+                self.slots_by_dept[dept_id] = even_slots  # Groupe B = jours pairs
+            
+            print(f"📅 Alternance départements: Groupe A ({len(dept_group_a)} depts) → {len(odd_days)} jours")
+            print(f"📅 Alternance départements: Groupe B ({len(dept_group_b)} depts) → {len(even_days)} jours")
         
         print(f"📅 {len(self.slots)} créneaux générés (repos: {rest_days} jour(s))")
     
@@ -302,9 +313,10 @@ class ExamScheduler:
         
         return supervisors if len(supervisors) == count else []
     
-    def _get_slots_for_dept(self, dept_id: int) -> List[ExamSlot]:
-        """Retourne les créneaux pour un département (avec division ou non)"""
-        if self.config.get('division_by_dept', False) and dept_id in self.slots_by_dept:
+    def _get_slots_for_dept(self, dept_id: int, module_id: int = None) -> List[ExamSlot]:
+        """Retourne les créneaux pour un département selon son groupe"""
+        if self.config.get('dept_splitting', False) and dept_id in self.slots_by_dept:
+            # Retourner directement les créneaux assignés à ce département
             return self.slots_by_dept[dept_id]
         return self.slots
     
@@ -446,8 +458,8 @@ class ExamScheduler:
             first_group = group_exams[0]
             scheduled = False
             
-            # Obtenir les créneaux pour ce département
-            available_slots = self._get_slots_for_dept(first_group.dept_id)
+            # Obtenir les créneaux pour ce département (avec division si activée)
+            available_slots = self._get_slots_for_dept(first_group.dept_id, module_id)
             
             for slot in available_slots:
                 if not self._check_student_availability(module_id, slot):
