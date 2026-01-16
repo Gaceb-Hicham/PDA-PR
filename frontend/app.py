@@ -586,100 +586,85 @@ elif "Configuration" in page:
     
     with tab3:
         st.markdown("### ⚡ Paramètres d'Optimisation")
-        st.info("Ces paramètres contrôlent les contraintes de génération des plannings d'examens.")
+        st.info("🔧 Ces paramètres contrôlent la génération des plannings. Modifiez-les puis régénérez.")
         
-        # Initialiser TOUTES les valeurs session
-        if 'max_exam_student' not in st.session_state:
-            st.session_state.max_exam_student = 1
-        if 'max_exam_prof' not in st.session_state:
-            st.session_state.max_exam_prof = 3
-        if 'fair_distribution' not in st.session_state:
-            st.session_state.fair_distribution = True
-        if 'dept_priority' not in st.session_state:
-            st.session_state.dept_priority = True
-        if 'rest_days' not in st.session_state:
-            st.session_state.rest_days = 0
-        if 'division_by_dept' not in st.session_state:
-            st.session_state.division_by_dept = False
-        if 'division_by_level' not in st.session_state:
-            st.session_state.division_by_level = False
+        # ════════════════════════════════════════════════════════
+        # PARAMÈTRES SIMPLES ET EFFICACES
+        # ════════════════════════════════════════════════════════
+        
+        st.markdown("---")
+        st.markdown("#### 📅 Planning & Repos")
         
         col1, col2 = st.columns(2)
-        
         with col1:
-            st.markdown("#### 👨‍🎓 Contraintes Étudiants")
-            st.session_state.max_exam_student = st.number_input(
-                "Max examens par étudiant par jour",
-                min_value=1, max_value=3, value=st.session_state.max_exam_student,
-                help="Nombre maximum d'examens qu'un étudiant peut passer par jour"
+            rest_days = st.selectbox(
+                "🛌 Jours de repos entre examens",
+                options=[0, 1, 2],
+                index=0,
+                format_func=lambda x: f"{x} jour(s) de repos" if x > 0 else "Pas de repos (examens consécutifs)",
+                help="Ex: 1 = Lundi examen, Mardi repos, Mercredi examen..."
             )
-            
-            st.markdown("#### 👨‍🏫 Contraintes Professeurs")
-            st.session_state.max_exam_prof = st.number_input(
-                "Max surveillances par prof par jour",
-                min_value=1, max_value=5, value=st.session_state.max_exam_prof,
-                help="Nombre maximum de surveillances par professeur par jour"
-            )
+            st.session_state.rest_days = rest_days
         
         with col2:
-            st.markdown("#### 📅 Jours de Repos")
-            st.session_state.rest_days = st.number_input(
-                "Jours de repos entre examens",
-                min_value=0, max_value=3, value=st.session_state.rest_days,
-                help="Nombre de jours de repos après chaque jour d'examen (ex: 1 = examen, repos, examen)"
+            max_exam = st.selectbox(
+                "📝 Max examens par étudiant par jour",
+                options=[1, 2],
+                index=0,
+                format_func=lambda x: f"{x} examen(s) maximum",
+                help="Recommandé: 1 pour éviter la surcharge"
             )
-            
-            st.markdown("#### 🔢 Niveaux Concernés")
-            niveaux = st.multiselect(
-                "Niveaux à planifier",
-                options=["L1", "L2", "L3", "M1", "M2"],
-                default=["L1", "L2", "L3", "M1", "M2"],
-                help="Sélectionnez les niveaux à inclure dans la génération"
-            )
-            st.session_state.selected_levels = niveaux
+            st.session_state.max_exam_student = max_exam
         
-        st.divider()
+        st.markdown("---")
+        st.markdown("#### 👨‍🏫 Surveillants par Salle")
         
-        st.markdown("#### ⚙️ Options Avancées")
         col1, col2 = st.columns(2)
-        
         with col1:
-            st.session_state.fair_distribution = st.checkbox(
-                "✅ Distribution équitable des surveillances",
-                value=st.session_state.fair_distribution,
-                help="Tous les enseignants auront un nombre similaire de surveillances"
+            sv_small = st.selectbox(
+                "🏢 Petite salle (< 100 places)",
+                options=[1, 2],
+                index=0,
+                format_func=lambda x: f"{x} surveillant(s)"
             )
-            st.session_state.dept_priority = st.checkbox(
-                "🏛️ Priorité départementale",
-                value=st.session_state.dept_priority,
-                help="Un enseignant surveille en priorité les examens de son département"
-            )
+            st.session_state.supervisors_small_room = sv_small
         
         with col2:
-            st.session_state.division_by_dept = st.checkbox(
-                "📊 Division par département",
-                value=st.session_state.division_by_dept,
-                help="Organise les examens pour éviter les conflits inter-départements"
+            sv_amphi = st.selectbox(
+                "🏛️ Amphithéâtre (> 100 places)",
+                options=[1, 2, 3],
+                index=1,
+                format_func=lambda x: f"{x} surveillant(s)"
             )
-            st.session_state.division_by_level = st.checkbox(
-                "📈 Division par niveau",
-                value=st.session_state.division_by_level,
-                help="Sépare les examens par niveau (L1 un jour, L2 un autre...)"
-            )
+            st.session_state.supervisors_amphi = sv_amphi
         
-        st.divider()
+        st.markdown("---")
+        st.markdown("#### 🎓 Niveaux à Planifier")
         
-        # Résumé
-        st.markdown("#### 📊 Résumé des Contraintes")
-        st.markdown(f"""
-        <div style="background: #1E1E32; padding: 15px; border-radius: 8px; border-left: 4px solid #6366F1;">
-            <p style="color: #F8FAFC; margin: 5px 0;">✅ <b>Étudiants:</b> Max {st.session_state.max_exam_student} examen(s)/jour</p>
-            <p style="color: #F8FAFC; margin: 5px 0;">✅ <b>Professeurs:</b> Max {st.session_state.max_exam_prof} surveillance(s)/jour</p>
-            <p style="color: #F8FAFC; margin: 5px 0;">{'✅' if st.session_state.rest_days > 0 else '❌'} <b>Repos:</b> {st.session_state.rest_days} jour(s) entre examens</p>
-            <p style="color: #F8FAFC; margin: 5px 0;">{'✅' if st.session_state.division_by_dept else '❌'} Division par département</p>
-            <p style="color: #F8FAFC; margin: 5px 0;">{'✅' if st.session_state.division_by_level else '❌'} Division par niveau</p>
-        </div>
-        """, unsafe_allow_html=True)
+        niveaux = st.multiselect(
+            "Sélectionnez les niveaux",
+            options=["L1", "L2", "L3", "M1", "M2"],
+            default=["L1", "L2", "L3", "M1", "M2"]
+        )
+        st.session_state.selected_levels = niveaux if niveaux else ["L1", "L2", "L3", "M1", "M2"]
+        
+        # Valeurs par défaut pour les autres paramètres
+        st.session_state.max_exam_prof = 3
+        st.session_state.fair_distribution = True
+        st.session_state.dept_priority = True
+        st.session_state.division_by_dept = False
+        st.session_state.division_by_level = False
+        
+        st.markdown("---")
+        
+        # RÉSUMÉ CLAIR
+        st.markdown("#### ✅ Configuration Actuelle")
+        st.success(f"""
+        **📅 Repos:** {st.session_state.rest_days} jour(s) entre chaque examen  
+        **📝 Étudiants:** Max {st.session_state.max_exam_student} examen/jour  
+        **👨‍🏫 Surveillants:** {st.session_state.supervisors_small_room} (salle) / {st.session_state.supervisors_amphi} (amphi)  
+        **🎓 Niveaux:** {', '.join(st.session_state.selected_levels)}
+        """)
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
@@ -1175,6 +1160,15 @@ elif "Génération" in page:
         
         st.divider()
         
+        # Afficher les paramètres qui seront utilisés
+        with st.expander("⚙️ Paramètres de génération", expanded=True):
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("🛌 Repos", f"{st.session_state.get('rest_days', 0)} jour(s)")
+            c2.metric("📝 Max/étudiant", f"{st.session_state.get('max_exam_student', 1)} exam/jour")
+            c3.metric("👨‍🏫 Surv. salle", st.session_state.get('supervisors_small_room', 1))
+            c4.metric("🏛️ Surv. amphi", st.session_state.get('supervisors_amphi', 2))
+            st.caption(f"🎓 Niveaux: {', '.join(st.session_state.get('selected_levels', ['L1','L2','L3','M1','M2']))}")
+        
         # Section Génération
         col1, col2 = st.columns([2, 1])
         
@@ -1188,8 +1182,23 @@ elif "Génération" in page:
                         q("DELETE FROM examens WHERE session_id=%s", (sid,), fetch='none')
                         
                         from services.optimization import run_optimization
+                        
+                        # Préparer les paramètres de configuration
+                        opt_config = {
+                            'max_exam_per_student_per_day': st.session_state.get('max_exam_student', 1),
+                            'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 3),
+                            'rest_days': st.session_state.get('rest_days', 0),
+                            'division_by_dept': st.session_state.get('division_by_dept', False),
+                            'division_by_level': st.session_state.get('division_by_level', False),
+                            'selected_levels': st.session_state.get('selected_levels', ['L1','L2','L3','M1','M2']),
+                            'supervisors_small_room': st.session_state.get('supervisors_small_room', 1),
+                            'supervisors_amphi': st.session_state.get('supervisors_amphi', 2),
+                            'fair_distribution': st.session_state.get('fair_distribution', True),
+                            'dept_priority': st.session_state.get('dept_priority', True)
+                        }
+                        
                         start = datetime.now()
-                        r = run_optimization(sid)
+                        r = run_optimization(sid, opt_config)
                         elapsed = (datetime.now() - start).total_seconds()
                         
                         st.balloons()
