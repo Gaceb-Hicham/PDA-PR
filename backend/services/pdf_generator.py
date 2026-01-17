@@ -90,6 +90,17 @@ def create_styles():
         alignment=TA_CENTER
     ))
     
+    # Style pour les séparateurs de jours - grande police, blanc, lisible
+    styles.add(ParagraphStyle(
+        name='DaySeparator',
+        parent=styles['Normal'],
+        fontSize=10,
+        textColor=colors.white,
+        alignment=TA_LEFT,
+        fontName='Helvetica-Bold',
+        leading=14
+    ))
+    
     return styles
 
 
@@ -157,9 +168,10 @@ def create_table(headers, data, col_widths, styles, date_col_index=0):
         
         # Si nouvelle date, ajouter un séparateur AVANT les examens de ce jour
         if row_date and row_date != current_date:
-            # Créer la ligne séparateur avec la date actuelle
-            sep_text = f"<b>📅 {row_date}</b>"
-            separator_row = [Paragraph(sep_text, cell_style)] + \
+            # Créer la ligne séparateur avec style dédié (grande police blanche)
+            sep_style = styles.get('DaySeparator', cell_style)
+            sep_text = f"<b>📅  {row_date}</b>"
+            separator_row = [Paragraph(sep_text, sep_style)] + \
                            [Paragraph("", cell_style) for _ in range(len(headers)-1)]
             data_rows.append(separator_row)
             separator_indices.append(len(data_rows))  # Index après insertion (1-indexed car header=0)
