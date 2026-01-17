@@ -140,17 +140,30 @@ def create_header(title, info_lines, styles, width=26*cm):
     return elements
 
 
-def create_table(headers, data, col_widths, styles):
-    """Crée un tableau avec text wrapping"""
-    # Convertir les données en Paragraphs pour le wrapping
+def create_table(headers, data, col_widths, styles, date_col_index=0):
+    """Crée un tableau avec séparateurs de jours et text wrapping"""
     cell_style = styles['CellText']
     
     # En-têtes
     header_row = [Paragraph(f"<b>{h}</b>", cell_style) for h in headers]
     
-    # Données
+    # Données avec séparateurs de jours
     data_rows = []
+    current_date = None
+    row_indices_with_separators = []  # Pour style le séparateur
+    
     for row in data:
+        # Vérifier si c'est un nouveau jour
+        row_date = row[date_col_index] if date_col_index < len(row) else None
+        
+        if row_date and row_date != current_date and current_date is not None:
+            # Ajouter un séparateur de jour
+            separator_row = [Paragraph(f"<b>📅 {row_date}</b>", cell_style)] + \
+                           [Paragraph("", cell_style) for _ in range(len(headers)-1)]
+            data_rows.append(separator_row)
+            row_indices_with_separators.append(len(data_rows))
+        
+        current_date = row_date
         data_rows.append([Paragraph(str(cell) if cell else "", cell_style) for cell in row])
     
     table_data = [header_row] + data_rows
@@ -169,8 +182,14 @@ def create_table(headers, data, col_widths, styles):
         ('LINEBELOW', (0, 0), (-1, 0), 1, HEADER_RED),
     ]
     
+    # Alterner les couleurs de fond + style séparateurs
     for i in range(1, len(table_data)):
-        if i % 2 == 0:
+        if i in row_indices_with_separators:
+            # Ligne séparateur de jour - couleur foncée
+            style_commands.append(('BACKGROUND', (0, i), (-1, i), HEADER_RED))
+            style_commands.append(('TEXTCOLOR', (0, i), (-1, i), colors.white))
+            style_commands.append(('SPAN', (0, i), (-1, i)))  # Fusionner les cellules
+        elif i % 2 == 0:
             style_commands.append(('BACKGROUND', (0, i), (-1, i), ROW_ALT))
         else:
             style_commands.append(('BACKGROUND', (0, i), (-1, i), BG_LIGHT))
@@ -207,19 +226,20 @@ def generate_formation_schedule_pdf(formation_name, groupe, niveau, departement,
     ))
     
     if examens:
-        headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle', 'Surveillant']
+        # Étudiants n'ont PAS besoin de voir le surveillant
+        headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle']
         data = []
         for exam in examens:
             data.append([
                 format_date(exam.get('date')),
                 format_time(exam.get('heure_debut'), exam.get('heure_fin')),
-                truncate(exam.get('module_code', ''), 10),
-                truncate(exam.get('module_nom', ''), 35),
-                exam.get('salle', ''),
-                truncate(exam.get('surveillant', ''), 20)
+                exam.get('module_code', ''),
+                truncate(exam.get('module_nom', ''), 40),
+                exam.get('salle', '')
             ])
         
-        col_widths = [2.5*cm, 2.5*cm, 2*cm, 9*cm, 2*cm, 5*cm]
+        # Colonnes plus larges sans la colonne Surveillant
+        col_widths = [3*cm, 3*cm, 2.5*cm, 12*cm, 3*cm]
         elements.append(create_table(headers, data, col_widths, styles))
     
     elements.append(Spacer(1, 15))
@@ -325,7 +345,7 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens, salle_t
     return buffer
 
 
-def generate_department_schedule_pdf(dept_name, formations_data):
+def generate_department_schedule_pdf(dept_name, formations_data, session_name="Session actuelle"):
     """Planning département - PAYSAGE avec toutes formations"""
     buffer = BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
@@ -340,7 +360,7 @@ def generate_department_schedule_pdf(dept_name, formations_data):
     elements.append(Spacer(1, 0.5*cm))
     elements.append(Paragraph(f"Département: {dept_name}", styles['SectionHeader']))
     elements.append(Spacer(1, 0.5*cm))
-    elements.append(Paragraph(f"Session: S1 2025-2026", styles['SubTitle']))
+    elements.append(Paragraph(f"Session: {session_name}", styles['SubTitle']))
     elements.append(Spacer(1, 1*cm))
     
     # Liste formations
@@ -365,20 +385,20 @@ def generate_department_schedule_pdf(dept_name, formations_data):
             styles, width=27*cm
         ))
         
-        headers = ['Date', 'Horaire', 'Code', 'Module', 'Groupe', 'Salle', 'Surveillant']
+        # Planning département: sans surveillant (public: étudiants/administration)
+        headers = ['Date', 'Horaire', 'Code', 'Module', 'Groupe', 'Salle']
         table_data = []
         for e in examens:
             table_data.append([
                 format_date(e.get('date')),
                 format_time(e.get('heure_debut'), e.get('heure_fin')),
-                truncate(e.get('module_code', ''), 10),
-                truncate(e.get('module_nom', ''), 30),
+                e.get('module_code', ''),
+                truncate(e.get('module_nom', ''), 35),
                 e.get('groupe', 'G01'),
-                e.get('salle', ''),
-                truncate(e.get('surveillant', ''), 18)
+                e.get('salle', '')
             ])
         
-        col_widths = [2.2*cm, 2.2*cm, 2*cm, 7*cm, 1.5*cm, 2*cm, 5*cm]
+        col_widths = [3*cm, 2.5*cm, 2.5*cm, 10*cm, 2*cm, 3*cm]
         elements.append(create_table(headers, table_data, col_widths, styles))
         elements.append(Spacer(1, 10))
         elements.append(create_footer())
@@ -426,19 +446,19 @@ def generate_multi_group_pdf(formation_name, niveau, exams_by_group, departement
         ))
         
         if examens:
-            headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle', 'Surveillant']
+            # Étudiants n'ont PAS besoin de voir le surveillant
+            headers = ['Date', 'Horaire', 'Code', 'Module', 'Salle']
             data = []
             for exam in examens:
                 data.append([
                     format_date(exam.get('date')),
                     format_time(exam.get('heure_debut'), exam.get('heure_fin')),
-                    truncate(exam.get('module_code', ''), 10),
-                    truncate(exam.get('module_nom', ''), 35),
-                    exam.get('salle', ''),
-                    truncate(exam.get('surveillant', '') or '—', 20)
+                    exam.get('module_code', ''),
+                    truncate(exam.get('module_nom', ''), 40),
+                    exam.get('salle', '')
                 ])
             
-            col_widths = [2.5*cm, 2.5*cm, 2*cm, 9*cm, 2*cm, 5*cm]
+            col_widths = [3*cm, 3*cm, 2.5*cm, 12*cm, 3*cm]
             elements.append(create_table(headers, data, col_widths, styles))
         else:
             elements.append(Paragraph("Aucun examen programmé", styles['Normal']))
@@ -454,5 +474,5 @@ def generate_multi_group_pdf(formation_name, niveau, exams_by_group, departement
     buffer.seek(0)
     return buffer
 
-def generate_department_pdf(dept_name, formations_data):
-    return generate_department_schedule_pdf(dept_name, formations_data)
+def generate_department_pdf(dept_name, formations_data, session_name="Session actuelle"):
+    return generate_department_schedule_pdf(dept_name, formations_data, session_name)

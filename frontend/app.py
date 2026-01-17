@@ -1427,13 +1427,15 @@ elif "Export" in page:
             
             if st.button("📄 Générer PDF", type="primary", key="b1"):
                 if sel_g == "Tous (multi-pages)":
+                    # Récupérer le nom du département pour cette formation
+                    dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
+                    dept_name = dept_info[0]['nom'] if dept_info else ""
+                    
                     all_ex = {}
                     for g in groupes:
+                        # Récupérer examens SANS surveillant (pas besoin pour étudiants)
                         ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                                m.code as module_code, m.nom as module_nom, l.code as salle,
-                                (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
-                                 JOIN professeurs p ON sv.professeur_id=p.id 
-                                 WHERE sv.examen_id=e.id LIMIT 1) as surveillant
+                                m.code as module_code, m.nom as module_nom, l.code as salle
                                 FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
                                 JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
                                 WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], g['g']))
@@ -1441,22 +1443,24 @@ elif "Export" in page:
                     if all_ex:
                         try:
                             from services.pdf_generator import generate_multi_group_pdf
-                            pdf = generate_multi_group_pdf(sel_f, fd['niveau'], all_ex)
+                            pdf = generate_multi_group_pdf(sel_f, fd['niveau'], all_ex, dept_name)
                             st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_f}.pdf", "application/pdf")
                         except Exception as e: st.error(f"Erreur: {e}")
                 else:
+                    # Récupérer le nom du département
+                    dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
+                    dept_name = dept_info[0]['nom'] if dept_info else ""
+                    
+                    # Récupérer examens SANS surveillant (pas besoin pour étudiants)
                     ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                            m.code as module_code, m.nom as module_nom, l.code as salle,
-                            (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
-                             JOIN professeurs p ON sv.professeur_id=p.id 
-                             WHERE sv.examen_id=e.id LIMIT 1) as surveillant
+                            m.code as module_code, m.nom as module_nom, l.code as salle
                             FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
                             JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
                             WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], sel_g))
                     if ex:
                         try:
                             from services.pdf_generator import generate_student_schedule_pdf
-                            pdf = generate_student_schedule_pdf(sel_f, sel_g, fd['niveau'], ex)
+                            pdf = generate_student_schedule_pdf(sel_f, sel_g, fd['niveau'], ex, dept_name)
                             st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_g}.pdf", "application/pdf")
                         except Exception as e: st.error(f"Erreur: {e}")
     
@@ -1472,12 +1476,10 @@ elif "Export" in page:
                 if st.button("📄 Générer PDF Département", type="primary", key="b2"):
                     all_data = {}
                     for f in forms:
+                        # Sans surveillant (déjà retiré du PDF département)
                         ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
                                 m.code as module_code, m.nom as module_nom, 
-                                COALESCE(e.groupe,'G01') as groupe, l.code as salle,
-                                (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
-                                 JOIN professeurs p ON sv.professeur_id=p.id 
-                                 WHERE sv.examen_id=e.id LIMIT 1) as surveillant
+                                COALESCE(e.groupe,'G01') as groupe, l.code as salle
                                 FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
                                 JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
                                 WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
@@ -1533,16 +1535,15 @@ elif "Export" in page:
             sd = next(s for s in salles if f"{s['nom']} ({s['capacite']})" == sel_s)
             
             if st.button("📄 Générer PDF", type="primary", key="b4"):
+                # Récupérer TOUS les surveillants avec GROUP_CONCAT et nb_etudiants_prevus réel
                 ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
                         m.code as module_code, m.nom as module_nom, f.nom as formation,
                         COALESCE(e.groupe,'G01') as groupe,
-                        (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
+                        (SELECT GROUP_CONCAT(CONCAT(p.prenom, ' ', p.nom) SEPARATOR ', ') 
+                         FROM surveillances sv 
                          JOIN professeurs p ON sv.professeur_id=p.id 
-                         WHERE sv.examen_id=e.id AND sv.role='RESPONSABLE' LIMIT 1) as surveillant,
-                        (SELECT CONCAT(p.prenom, ' ', p.nom) FROM surveillances sv 
-                         JOIN professeurs p ON sv.professeur_id=p.id 
-                         WHERE sv.examen_id=e.id LIMIT 1) as prof_nom,
-                        (SELECT COUNT(*) FROM inscriptions i WHERE i.module_id=e.module_id) as nb_etudiants
+                         WHERE sv.examen_id=e.id) as surveillant,
+                        COALESCE(e.nb_etudiants_prevus, 0) as nb_etudiants
                         FROM examens e 
                         JOIN modules m ON e.module_id=m.id 
                         JOIN formations f ON m.formation_id=f.id

@@ -164,25 +164,30 @@ class ExamScheduler:
         rest_days = self.config.get('rest_days', 0)
         dept_splitting = self.config.get('dept_splitting', False)
         
-        # Générer tous les jours ouvrables
-        work_days = []
+        # Générer tous les jours ouvrables (lundi-vendredi)
+        all_work_days = []
         current = start_date
         while current <= end_date:
             # Exclure weekends (samedi=5, dimanche=6)
             if current.weekday() < 5:
-                work_days.append(current)
+                all_work_days.append(current)
             current += timedelta(days=1)
         
-        # Appliquer les jours de repos
-        if rest_days > 0:
+        # Appliquer les jours de repos entre jours ouvrables
+        # rest_days = 1 signifie: Exam Jour 1, Repos Jour 2, Exam Jour 3...
+        if rest_days > 0 and all_work_days:
             exam_days = []
             i = 0
-            while i < len(work_days):
-                exam_days.append(work_days[i])
-                i += 1 + rest_days  # Sauter les jours de repos
+            while i < len(all_work_days):
+                exam_days.append(all_work_days[i])
+                # Sauter rest_days jours OUVRABLES (pas calendaires)
+                i += 1 + rest_days
             work_days = exam_days
+            print(f"📅 Jours de repos: {rest_days} → {len(exam_days)} jours d'examen sur {len(all_work_days)} ouvrables")
+        else:
+            work_days = all_work_days
         
-        # Générer les créneaux
+        # Générer les créneaux pour chaque jour d'examen
         for day in work_days:
             for c in creneaux:
                 self.slots.append(ExamSlot(
@@ -422,8 +427,8 @@ class ExamScheduler:
         print("🚀 OPTIMISATION v6.0 - Paramètres Avancés")
         print("="*60)
         print(f"   - Rest days: {self.config.get('rest_days', 0)}")
-        print(f"   - Division par dept: {self.config.get('division_by_dept', False)}")
-        print(f"   - Surveillants amphi: {self.config.get('supervisors_amphi', 2)}")
+        print(f"   - Division par dept: {self.config.get('dept_splitting', False)}")
+        print(f"   - Surveillants: salle={self.config.get('supervisors_small_room', 1)}, amphi={self.config.get('supervisors_amphi', 2)}")
         
         self._load_departments()
         self._load_rooms()
