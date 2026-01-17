@@ -147,28 +147,32 @@ def create_table(headers, data, col_widths, styles, date_col_index=0):
     # En-têtes
     header_row = [Paragraph(f"<b>{h}</b>", cell_style) for h in headers]
     
-    # Données avec séparateurs de jours
+    # Grouper les données par date pour ajouter des séparateurs
     data_rows = []
+    separator_indices = []  # Indices des lignes séparateur (1-indexed après header)
     current_date = None
-    row_indices_with_separators = []  # Pour style le séparateur
     
     for row in data:
-        # Vérifier si c'est un nouveau jour
         row_date = row[date_col_index] if date_col_index < len(row) else None
         
-        if row_date and row_date != current_date and current_date is not None:
-            # Ajouter un séparateur de jour
-            separator_row = [Paragraph(f"<b>📅 {row_date}</b>", cell_style)] + \
+        # Si nouvelle date, ajouter un séparateur AVANT les examens de ce jour
+        if row_date and row_date != current_date:
+            # Créer la ligne séparateur avec la date actuelle
+            sep_text = f"<b>📅 {row_date}</b>"
+            separator_row = [Paragraph(sep_text, cell_style)] + \
                            [Paragraph("", cell_style) for _ in range(len(headers)-1)]
             data_rows.append(separator_row)
-            row_indices_with_separators.append(len(data_rows))
+            separator_indices.append(len(data_rows))  # Index après insertion (1-indexed car header=0)
+            current_date = row_date
         
-        current_date = row_date
+        # Ajouter la ligne de données normale
         data_rows.append([Paragraph(str(cell) if cell else "", cell_style) for cell in row])
     
+    # Construire le tableau
     table_data = [header_row] + data_rows
     table = Table(table_data, colWidths=col_widths, repeatRows=1)
     
+    # Styles de base
     style_commands = [
         ('BACKGROUND', (0, 0), (-1, 0), HEADER_RED),
         ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
@@ -182,17 +186,24 @@ def create_table(headers, data, col_widths, styles, date_col_index=0):
         ('LINEBELOW', (0, 0), (-1, 0), 1, HEADER_RED),
     ]
     
-    # Alterner les couleurs de fond + style séparateurs
+    # Appliquer styles: séparateurs + alternance couleurs
+    row_counter = 0
     for i in range(1, len(table_data)):
-        if i in row_indices_with_separators:
-            # Ligne séparateur de jour - couleur foncée
-            style_commands.append(('BACKGROUND', (0, i), (-1, i), HEADER_RED))
+        if i in separator_indices:
+            # Style séparateur de jour - bandeau coloré fusionné
+            style_commands.append(('BACKGROUND', (0, i), (-1, i), HEADER_DARK))
             style_commands.append(('TEXTCOLOR', (0, i), (-1, i), colors.white))
-            style_commands.append(('SPAN', (0, i), (-1, i)))  # Fusionner les cellules
-        elif i % 2 == 0:
-            style_commands.append(('BACKGROUND', (0, i), (-1, i), ROW_ALT))
+            style_commands.append(('SPAN', (0, i), (-1, i)))
+            style_commands.append(('ALIGN', (0, i), (-1, i), 'LEFT'))
+            style_commands.append(('LEFTPADDING', (0, i), (0, i), 10))
+            row_counter = 0  # Reset alternance pour chaque jour
         else:
-            style_commands.append(('BACKGROUND', (0, i), (-1, i), BG_LIGHT))
+            # Lignes normales avec alternance de couleurs
+            if row_counter % 2 == 0:
+                style_commands.append(('BACKGROUND', (0, i), (-1, i), BG_LIGHT))
+            else:
+                style_commands.append(('BACKGROUND', (0, i), (-1, i), ROW_ALT))
+            row_counter += 1
     
     table.setStyle(TableStyle(style_commands))
     return table

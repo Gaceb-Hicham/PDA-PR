@@ -1275,6 +1275,15 @@ elif "Génération" in page:
                         c1.metric("📅 Planifiés", r.get('scheduled', 0))
                         c2.metric("⚠️ Conflits", r.get('conflicts', 0))
                         c3.metric("📊 Taux", f"{r.get('success_rate', 0):.1f}%")
+                        
+                        # Afficher les paramètres appliqués
+                        with st.expander("📋 Paramètres appliqués", expanded=True):
+                            st.write(f"**Jours de repos:** {opt_config.get('rest_days', 0)}")
+                            st.write(f"**Surveillants (salle):** {opt_config.get('supervisors_small_room', 1)}")
+                            st.write(f"**Surveillants (amphi):** {opt_config.get('supervisors_amphi', 2)}")
+                            st.write(f"**Division département:** {'Oui' if opt_config.get('dept_splitting') else 'Non'}")
+                            st.write(f"**Regroupement salles:** Oui")
+                        
                         st.cache_data.clear()
                     except Exception as e:
                         st.error(f"❌ {e}")

@@ -284,10 +284,10 @@ class ExamScheduler:
         return True
     
     def _find_supervisors(self, dept_id: int, slot: ExamSlot, count: int, excluded: Set[int]) -> List[int]:
-        """Trouve plusieurs surveillants disponibles"""
+        """Trouve plusieurs surveillants disponibles - retourne au moins 1 si possible"""
         supervisors = []
         
-        # Trier par nombre total de surveillances
+        # Trier par nombre total de surveillances (équité)
         sorted_profs = sorted(
             self.professors,
             key=lambda p: self.prof_total_supervisions[p['id']]
@@ -295,7 +295,7 @@ class ExamScheduler:
         
         dept_priority = self.config.get('dept_priority', True)
         
-        # D'abord département si priorité activée
+        # D'abord professeurs du département si priorité activée
         if dept_priority:
             for prof in sorted_profs:
                 if len(supervisors) >= count:
@@ -307,7 +307,7 @@ class ExamScheduler:
                 if self._is_prof_available_for_slot(prof['id'], slot):
                     supervisors.append(prof['id'])
         
-        # Ensuite autres
+        # Ensuite autres professeurs si besoin
         for prof in sorted_profs:
             if len(supervisors) >= count:
                 break
@@ -316,7 +316,9 @@ class ExamScheduler:
             if self._is_prof_available_for_slot(prof['id'], slot):
                 supervisors.append(prof['id'])
         
-        return supervisors if len(supervisors) == count else []
+        # Retourner ce qu'on a trouvé si au moins 1 surveillant (mode souple)
+        # Au lieu de refuser complètement si count non atteint
+        return supervisors if supervisors else []
     
     def _get_slots_for_dept(self, dept_id: int, module_id: int = None) -> List[ExamSlot]:
         """Retourne les créneaux pour un département selon son groupe"""
@@ -346,20 +348,40 @@ class ExamScheduler:
         slot: ExamSlot
     ) -> Optional[List[Tuple[GroupExam, Dict, List[int]]]]:
         """
-        RÈGLE STRICTE: 
-        - Chaque groupe = Sa propre salle + Ses propres surveillants
-        - Nombre de surveillants selon capacité salle
+        RÈGLES OPTIMISÉES:
+        - Possibilité de regrouper plusieurs groupes du même module dans une grande salle
+        - Au moins 1 surveillant requis (idéalement selon capacité salle)
+        - Nombre de surveillants selon capacité salle quand possible
         """
         dept_id = group_exams[0].dept_id
+        allow_room_sharing = self.config.get('allow_room_sharing', True)
         
         assignments = []
         used_rooms = set()
         used_profs = set()
         
+        # Trier par nb étudiants décroissant
         sorted_groups = sorted(group_exams, key=lambda x: x.nb_etudiants, reverse=True)
         
+        # Si regroupement autorisé, essayer de mettre plusieurs groupes ensemble
+        if allow_room_sharing and len(sorted_groups) > 1:
+            total_students = sum(g.nb_etudiants for g in sorted_groups)
+            # Chercher une grande salle pour tous les groupes
+            for room in self.rooms:
+                if slot in self.room_schedule[room['id']]:
+                    continue
+                if room['capacite'] >= total_students:
+                    # Trouvé! Assigner tous les groupes à cette salle
+                    required = self._get_required_supervisors(room)
+                    supervisors = self._find_supervisors(dept_id, slot, required, used_profs)
+                    
+                    if supervisors:  # Au moins 1 surveillant
+                        for group in sorted_groups:
+                            assignments.append((group, room, supervisors))
+                        return assignments
+        
+        # Mode normal: une salle par groupe
         for group in sorted_groups:
-            # Trouver une salle libre
             room_found = None
             for room in self.rooms:
                 if room['id'] in used_rooms:
@@ -374,11 +396,11 @@ class ExamScheduler:
             if not room_found:
                 return None
             
-            # Trouver les surveillants requis
+            # Trouver les surveillants requis - accepte minimum 1
             required = self._get_required_supervisors(room_found)
             supervisors = self._find_supervisors(dept_id, slot, required, used_profs)
             
-            if len(supervisors) < required:
+            if not supervisors:  # Au moins 1 surveillant requis
                 return None
             
             assignments.append((group, room_found, supervisors))
