@@ -269,10 +269,18 @@ class ExamScheduler:
     def _get_required_supervisors(self, room: Dict) -> int:
         """Calcule le nombre de surveillants requis selon la capacité"""
         capacity = room.get('capacite', 0)
-        if capacity > 100:  # Amphithéâtre
-            return self.config.get('supervisors_amphi', 2)
+        
+        # Debug: afficher les valeurs config reçues
+        sv_small = self.config.get('supervisors_small_room', 1)
+        sv_amphi = self.config.get('supervisors_amphi', 2)
+        
+        if capacity >= 100:  # Amphithéâtre (modifié: >= au lieu de >)
+            result = sv_amphi
         else:  # Petite salle
-            return self.config.get('supervisors_small_room', 1)
+            result = sv_small
+        
+        print(f"🔍 Salle {room.get('nom', '?')} capacité={capacity} → {result} surveillants requis (config: small={sv_small}, amphi={sv_amphi})")
+        return result
     
     def _is_prof_available_for_slot(self, prof_id: int, slot: ExamSlot) -> bool:
         """Vérifie si un prof est disponible à ce créneau"""
@@ -316,8 +324,10 @@ class ExamScheduler:
             if self._is_prof_available_for_slot(prof['id'], slot):
                 supervisors.append(prof['id'])
         
+        # Debug: afficher combien de surveillants trouvés
+        print(f"👥 _find_supervisors: demandé={count}, trouvé={len(supervisors)}, IDs={supervisors}")
+        
         # Retourner ce qu'on a trouvé si au moins 1 surveillant (mode souple)
-        # Au lieu de refuser complètement si count non atteint
         return supervisors if supervisors else []
     
     def _get_slots_for_dept(self, dept_id: int, module_id: int = None) -> List[ExamSlot]:
@@ -602,7 +612,7 @@ def run_optimization(session_id: int, config: Dict = None) -> Dict:
         
         total_modules = len(scheduler.exams_by_module)
         
-        return {
+        result = {
             'success': True,
             'scheduled': scheduled,
             'conflicts': conflicts,
@@ -611,6 +621,11 @@ def run_optimization(session_id: int, config: Dict = None) -> Dict:
             'modules_planifies': total_modules - conflicts,
             'total_modules': total_modules
         }
+        
+        # Debug: afficher les valeurs retournées
+        print(f"🔄 run_optimization returning: scheduled={scheduled}, conflicts={conflicts}, success_rate={result['success_rate']:.1f}%")
+        
+        return result
     except Exception as e:
         import traceback
         traceback.print_exc()
