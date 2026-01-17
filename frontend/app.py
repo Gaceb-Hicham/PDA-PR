@@ -1309,12 +1309,23 @@ elif "Génération" in page:
                         r = run_optimization(sid, opt_config)
                         elapsed = (datetime.now() - start).total_seconds()
                         
+                        # Debug: afficher le résultat retourné
+                        print(f"📊 UI received: r = {r}")
+                        
                         st.balloons()
                         st.success(f"✅ Terminé en {elapsed:.1f}s!")
+                        
+                        # Obtenir les valeurs depuis la base de données (source de vérité)
+                        db_exams = q("SELECT COUNT(*) as cnt FROM examens WHERE session_id = %s", (sid,), fetch='one')
+                        db_surv = q("SELECT COUNT(*) as cnt FROM surveillances sv JOIN examens e ON sv.examen_id = e.id WHERE e.session_id = %s", (sid,), fetch='one')
+                        
+                        exams_count = db_exams.get('cnt', 0) if db_exams else r.get('scheduled', 0)
+                        surv_count = db_surv.get('cnt', 0) if db_surv else 0
+                        
                         c1, c2, c3 = st.columns(3)
-                        c1.metric("📅 Planifiés", r.get('scheduled', 0))
+                        c1.metric("📅 Examens Planifiés", exams_count)
                         c2.metric("⚠️ Conflits", r.get('conflicts', 0))
-                        c3.metric("📊 Taux", f"{r.get('success_rate', 0):.1f}%")
+                        c3.metric("📊 Surveillances", surv_count)
                         
                         # Afficher les paramètres appliqués
                         with st.expander("📋 Paramètres appliqués", expanded=True):
