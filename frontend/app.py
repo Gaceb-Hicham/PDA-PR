@@ -739,6 +739,23 @@ elif "Configuration" in page:
             )
             st.session_state.supervisors_amphi = sv_amphi
         
+        # Nouvelle option: Max surveillances par professeur
+        st.markdown("##### 📊 Limite de surveillances")
+        col1, col2 = st.columns(2)
+        with col1:
+            max_surv = st.number_input(
+                "🎯 Max surveillances par enseignant (par session)",
+                min_value=1, max_value=50, value=15, step=1,
+                help="Nombre maximum de surveillances qu'un enseignant peut effectuer pendant toute la session d'examen"
+            )
+            st.session_state.max_supervisions_per_prof = max_surv
+        
+        with col2:
+            st.caption(f"""
+            ℹ️ **Exemple:** Si réglé à **{max_surv}**, chaque enseignant surveillera au maximum **{max_surv} examens** pendant la session.
+            Cela garantit une répartition équitable des charges de surveillance.
+            """)
+        
         # ════════════════════════════════════════════════════════
         # SECTION 4: NIVEAUX
         # ════════════════════════════════════════════════════════
@@ -1290,7 +1307,6 @@ elif "Génération" in page:
                         
                         from services.optimization import run_optimization
                         
-                        # Préparer les paramètres de configuration
                         opt_config = {
                             'max_exam_per_student_per_day': st.session_state.get('max_exam_student', 1),
                             'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 5),
@@ -1302,7 +1318,8 @@ elif "Génération" in page:
                             'supervisors_small_room': st.session_state.get('supervisors_small_room', 1),
                             'supervisors_amphi': st.session_state.get('supervisors_amphi', 2),
                             'fair_distribution': st.session_state.get('fair_distribution', True),
-                            'dept_priority': st.session_state.get('dept_priority', True)
+                            'dept_priority': st.session_state.get('dept_priority', True),
+                            'max_supervisions_per_prof': st.session_state.get('max_supervisions_per_prof', 15)
                         }
                         
                         start = datetime.now()

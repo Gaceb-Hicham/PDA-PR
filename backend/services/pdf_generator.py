@@ -340,21 +340,22 @@ def generate_room_schedule_pdf(salle_nom, salle_code, capacite, examens, salle_t
     elements.extend(create_header("Planning de la Salle", info, styles, width=27*cm))
     
     if examens:
-        headers = ['Date', 'Horaire', 'Module', 'Formation', 'Grp', 'Surveillant', 'Étudiants']
+        headers = ['Date', 'Horaire', 'Module', 'Formation', 'Grp', 'Surveillants', 'Étudiants']
         data = []
         for e in examens:
             surv = e.get('surveillant') or e.get('prof_nom') or ''
             data.append([
                 format_date(e.get('date')),
                 format_time(e.get('heure_debut'), e.get('heure_fin')),
-                truncate(e.get('module_nom', e.get('module_code', '')), 25),
-                truncate(e.get('formation', ''), 22),
+                truncate(e.get('module_nom', e.get('module_code', '')), 22),
+                truncate(e.get('formation', ''), 18),
                 e.get('groupe', ''),
-                truncate(surv, 18),
+                truncate(surv, 50),  # Plus de place pour tous les surveillants
                 str(e.get('nb_etudiants', '—'))
             ])
         
-        col_widths = [2.2*cm, 2.2*cm, 5*cm, 5*cm, 1.5*cm, 4.5*cm, 2*cm]
+        # Colonnes ajustées: Surveillants plus large (7cm au lieu de 4.5cm)
+        col_widths = [2*cm, 2*cm, 4.5*cm, 4*cm, 1.2*cm, 7*cm, 1.8*cm]
         elements.append(create_table(headers, data, col_widths, styles))
         
         elements.append(Spacer(1, 8))

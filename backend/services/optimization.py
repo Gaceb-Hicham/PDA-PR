@@ -295,6 +295,9 @@ class ExamScheduler:
         """Trouve plusieurs surveillants disponibles - retourne au moins 1 si possible"""
         supervisors = []
         
+        # Limite de surveillances par session
+        max_per_session = self.config.get('max_supervisions_per_prof', 15)
+        
         # Trier par nombre total de surveillances (équité)
         sorted_profs = sorted(
             self.professors,
@@ -312,6 +315,9 @@ class ExamScheduler:
                     continue
                 if prof['id'] in excluded:
                     continue
+                # Vérifier la limite de surveillances par session
+                if self.prof_total_supervisions[prof['id']] >= max_per_session:
+                    continue
                 if self._is_prof_available_for_slot(prof['id'], slot):
                     supervisors.append(prof['id'])
         
@@ -320,6 +326,9 @@ class ExamScheduler:
             if len(supervisors) >= count:
                 break
             if prof['id'] in excluded or prof['id'] in supervisors:
+                continue
+            # Vérifier la limite de surveillances par session
+            if self.prof_total_supervisions[prof['id']] >= max_per_session:
                 continue
             if self._is_prof_available_for_slot(prof['id'], slot):
                 supervisors.append(prof['id'])
