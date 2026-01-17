@@ -355,6 +355,7 @@ class ExamScheduler:
         """
         dept_id = group_exams[0].dept_id
         allow_room_sharing = self.config.get('allow_room_sharing', True)
+        max_groups_per_room = self.config.get('max_groups_per_room', 2)  # Limite par défaut: 2 groupes max
         
         assignments = []
         used_rooms = set()
@@ -363,22 +364,30 @@ class ExamScheduler:
         # Trier par nb étudiants décroissant
         sorted_groups = sorted(group_exams, key=lambda x: x.nb_etudiants, reverse=True)
         
-        # Si regroupement autorisé, essayer de mettre plusieurs groupes ensemble
+        # Si regroupement autorisé, essayer de mettre AU MAXIMUM 2 groupes ensemble (configurable)
         if allow_room_sharing and len(sorted_groups) > 1:
-            total_students = sum(g.nb_etudiants for g in sorted_groups)
-            # Chercher une grande salle pour tous les groupes
+            groups_to_merge = sorted_groups[:max_groups_per_room]  # Limiter au max configuré
+            total_students = sum(g.nb_etudiants for g in groups_to_merge)
+            
+            # Chercher une grande salle pour ces groupes seulement
             for room in self.rooms:
                 if slot in self.room_schedule[room['id']]:
                     continue
                 if room['capacite'] >= total_students:
-                    # Trouvé! Assigner tous les groupes à cette salle
+                    # Trouvé! Assigner seulement les groupes limités
                     required = self._get_required_supervisors(room)
                     supervisors = self._find_supervisors(dept_id, slot, required, used_profs)
                     
                     if supervisors:  # Au moins 1 surveillant
-                        for group in sorted_groups:
+                        for group in groups_to_merge:
                             assignments.append((group, room, supervisors))
-                        return assignments
+                        used_rooms.add(room['id'])
+                        used_profs.update(supervisors)
+                        
+                        # Traiter les groupes restants individuellement
+                        remaining_groups = sorted_groups[max_groups_per_room:]
+                        sorted_groups = remaining_groups
+                        break
         
         # Mode normal: une salle par groupe
         for group in sorted_groups:
