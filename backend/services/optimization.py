@@ -225,6 +225,13 @@ class ExamScheduler:
     def _load_exams_by_group(self):
         """Charge les examens PAR GROUPE avec filtrage par niveau"""
         selected_levels = self.config.get('selected_levels', ['L1', 'L2', 'L3', 'M1', 'M2'])
+        
+        # Validation: ne garder que les niveaux valides pour éviter injection SQL
+        valid_levels = {'L1', 'L2', 'L3', 'M1', 'M2'}
+        selected_levels = [l for l in selected_levels if l in valid_levels]
+        if not selected_levels:
+            selected_levels = list(valid_levels)
+        
         levels_str = "','".join(selected_levels)
         
         group_data = execute_query(f"""
@@ -626,9 +633,6 @@ def run_optimization(session_id: int, config: Dict = None) -> Dict:
             'modules_planifies': total_modules - conflicts,
             'total_modules': total_modules
         }
-        
-        # Debug: afficher les valeurs retournées
-        print(f"🔄 run_optimization returning: scheduled={scheduled}, conflicts={conflicts}, success_rate={result['success_rate']:.1f}%")
         
         return result
     except Exception as e:
