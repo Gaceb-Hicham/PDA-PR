@@ -279,7 +279,8 @@ class ExamScheduler:
         else:  # Petite salle
             result = sv_small
         
-        print(f"🔍 Salle {room.get('nom', '?')} capacité={capacity} → {result} surveillants requis (config: small={sv_small}, amphi={sv_amphi})")
+        # Debug désactivé pour performance (2000+ appels)
+        # print(f"🔍 Salle {room.get('nom', '?')} capacité={capacity} → {result} surveillants requis")
         return result
     
     def _is_prof_available_for_slot(self, prof_id: int, slot: ExamSlot) -> bool:
@@ -295,8 +296,8 @@ class ExamScheduler:
         """Trouve plusieurs surveillants disponibles - retourne au moins 1 si possible"""
         supervisors = []
         
-        # Limite de surveillances par session
-        max_per_session = self.config.get('max_supervisions_per_prof', 15)
+        # Limite de surveillances par JOUR (conformément au PDF: Professeurs max 3 examens/jour)
+        max_per_day = self.config.get('max_supervisions_per_prof_per_day', 3)
         
         # Trier par nombre total de surveillances (équité)
         sorted_profs = sorted(
@@ -315,8 +316,8 @@ class ExamScheduler:
                     continue
                 if prof['id'] in excluded:
                     continue
-                # Vérifier la limite de surveillances par session
-                if self.prof_total_supervisions[prof['id']] >= max_per_session:
+                # Vérifier la limite de surveillances par JOUR
+                if self.prof_daily_count[prof['id']][slot.date] >= max_per_day:
                     continue
                 if self._is_prof_available_for_slot(prof['id'], slot):
                     supervisors.append(prof['id'])
@@ -327,14 +328,14 @@ class ExamScheduler:
                 break
             if prof['id'] in excluded or prof['id'] in supervisors:
                 continue
-            # Vérifier la limite de surveillances par session
-            if self.prof_total_supervisions[prof['id']] >= max_per_session:
+            # Vérifier la limite de surveillances par JOUR
+            if self.prof_daily_count[prof['id']][slot.date] >= max_per_day:
                 continue
             if self._is_prof_available_for_slot(prof['id'], slot):
                 supervisors.append(prof['id'])
         
-        # Debug: afficher combien de surveillants trouvés
-        print(f"👥 _find_supervisors: demandé={count}, trouvé={len(supervisors)}, IDs={supervisors}")
+        # Debug désactivé pour performance (2000+ appels)
+        # print(f"👥 _find_supervisors: demandé={count}, trouvé={len(supervisors)}")
         
         # Retourner ce qu'on a trouvé si au moins 1 surveillant (mode souple)
         return supervisors if supervisors else []
@@ -562,11 +563,6 @@ class ExamScheduler:
                 (SELECT id FROM examens WHERE session_id = %s)
             """, (self.session_id,))
             cursor.execute("DELETE FROM examens WHERE session_id = %s", (self.session_id,))
-            
-            try:
-                cursor.execute("SELECT groupe FROM examens LIMIT 1")
-            except:
-                cursor.execute("ALTER TABLE examens ADD COLUMN groupe VARCHAR(20) DEFAULT NULL")
             
             for se in self.scheduled_exams:
                 cursor.execute("""

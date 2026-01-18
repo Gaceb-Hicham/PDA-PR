@@ -739,21 +739,21 @@ elif "Configuration" in page:
             )
             st.session_state.supervisors_amphi = sv_amphi
         
-        # Nouvelle option: Max surveillances par professeur
-        st.markdown("##### 📊 Limite de surveillances")
+        # Nouvelle option: Max surveillances par professeur PAR JOUR
+        st.markdown("##### 📊 Limite de surveillances par jour")
         col1, col2 = st.columns(2)
         with col1:
-            max_surv = st.number_input(
-                "🎯 Max surveillances par enseignant (par session)",
-                min_value=1, max_value=50, value=15, step=1,
-                help="Nombre maximum de surveillances qu'un enseignant peut effectuer pendant toute la session d'examen"
+            max_surv_day = st.number_input(
+                "🎯 Max surveillances par enseignant (par jour)",
+                min_value=1, max_value=10, value=3, step=1,
+                help="Nombre maximum de surveillances qu'un enseignant peut effectuer PAR JOUR"
             )
-            st.session_state.max_supervisions_per_prof = max_surv
+            st.session_state.max_supervisions_per_prof_per_day = max_surv_day
         
         with col2:
             st.caption(f"""
-            ℹ️ **Exemple:** Si réglé à **{max_surv}**, chaque enseignant surveillera au maximum **{max_surv} examens** pendant la session.
-            Cela garantit une répartition équitable des charges de surveillance.
+            ℹ️ **Conformément au PDF:** Un enseignant peut surveiller au maximum **{max_surv_day} examens par jour**.
+            Cela respecte la contrainte "Professeurs: Maximum 3 examens par jour".
             """)
         
         # ════════════════════════════════════════════════════════
@@ -1309,7 +1309,7 @@ elif "Génération" in page:
                         
                         opt_config = {
                             'max_exam_per_student_per_day': st.session_state.get('max_exam_student', 1),
-                            'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 5),
+                            'max_exam_per_professor_per_day': st.session_state.get('max_exam_prof', 3),
                             'rest_days': st.session_state.get('rest_days', 0),
                             'dept_splitting': st.session_state.get('dept_splitting', False),
                             'dept_group_a': st.session_state.get('dept_group_a', []),
@@ -1319,15 +1319,12 @@ elif "Génération" in page:
                             'supervisors_amphi': st.session_state.get('supervisors_amphi', 2),
                             'fair_distribution': st.session_state.get('fair_distribution', True),
                             'dept_priority': st.session_state.get('dept_priority', True),
-                            'max_supervisions_per_prof': st.session_state.get('max_supervisions_per_prof', 15)
+                            'max_supervisions_per_prof_per_day': st.session_state.get('max_supervisions_per_prof_per_day', 3)
                         }
                         
                         start = datetime.now()
                         r = run_optimization(sid, opt_config)
                         elapsed = (datetime.now() - start).total_seconds()
-                        
-                        # Debug: afficher le résultat retourné
-                        print(f"📊 UI received: r = {r}")
                         
                         st.balloons()
                         st.success(f"✅ Terminé en {elapsed:.1f}s!")
