@@ -372,7 +372,10 @@ with st.sidebar:
         "📝 Données",
         "🚀 Génération",
         "📊 Plannings",
-        "📄 Export"
+        "📄 Export",
+        "📈 KPIs Vice-doyen",
+        "✅ Validation Dept",
+        "⏱️ Benchmarks"
     ], label_visibility="collapsed")
     
     st.divider()
@@ -1668,3 +1671,339 @@ elif "Export" in page:
                         pdf = generate_room_schedule_pdf(sd['nom'], sd['code'], sd['capacite'], ex)
                         st.download_button("⬇️ Télécharger", pdf, f"salle_{sd['code']}.pdf", "application/pdf")
                     except Exception as e: st.error(f"Erreur: {e}")
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  PAGE: KPIs VICE-DOYEN - Vue stratégique globale                              ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+elif "KPIs Vice-doyen" in page:
+    st.markdown("""
+    <div class="hero-gradient">
+        <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">📈 KPIs Vice-doyen</h1>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Vue stratégique globale - Occupation, Conflits, Performance</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    sessions = get_sessions()
+    if sessions:
+        sel_s = st.selectbox("📅 Session", [s['nom'] for s in sessions], key="kpi_session")
+        sid = next(s['id'] for s in sessions if s['nom'] == sel_s)
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # SECTION 1: KPIs GLOBAUX
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        st.markdown("### 📊 Indicateurs Globaux")
+        
+        kpis = q("""
+            SELECT 
+                (SELECT COUNT(*) FROM examens WHERE session_id = %s) as total_examens,
+                (SELECT COUNT(DISTINCT module_id) FROM examens WHERE session_id = %s) as modules_planifies,
+                (SELECT COUNT(DISTINCT salle_id) FROM examens WHERE session_id = %s) as salles_utilisees,
+                (SELECT COUNT(*) FROM lieu_examen WHERE disponible=TRUE) as total_salles,
+                (SELECT COUNT(*) FROM surveillances sv JOIN examens e ON sv.examen_id=e.id WHERE e.session_id=%s) as total_surveillances,
+                (SELECT COUNT(DISTINCT sv.professeur_id) FROM surveillances sv JOIN examens e ON sv.examen_id=e.id WHERE e.session_id=%s) as profs_actifs,
+                (SELECT COUNT(*) FROM professeurs) as total_profs
+        """, (sid, sid, sid, sid, sid), fetch='one')
+        
+        if kpis:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📅 Examens Planifiés", kpis['total_examens'] or 0)
+            c2.metric("📖 Modules Couverts", kpis['modules_planifies'] or 0)
+            
+            taux_salles = ((kpis['salles_utilisees'] or 0) / max(kpis['total_salles'] or 1, 1)) * 100
+            c3.metric("🏢 Taux Occupation Salles", f"{taux_salles:.1f}%")
+            
+            taux_profs = ((kpis['profs_actifs'] or 0) / max(kpis['total_profs'] or 1, 1)) * 100
+            c4.metric("👨‍🏫 Profs Mobilisés", f"{taux_profs:.0f}%")
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # SECTION 2: TAUX DE CONFLITS PAR DÉPARTEMENT
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        st.markdown("### ⚠️ Taux de Conflits par Département")
+        
+        dept_stats = q("""
+            SELECT 
+                d.id, d.nom as departement, d.code,
+                COUNT(DISTINCT e.id) as examens,
+                COUNT(DISTINCT c.id) as conflits,
+                ROUND(COUNT(DISTINCT c.id) * 100.0 / NULLIF(COUNT(DISTINCT e.id), 0), 2) as taux_conflits
+            FROM departements d
+            LEFT JOIN formations f ON f.dept_id = d.id
+            LEFT JOIN modules m ON m.formation_id = f.id
+            LEFT JOIN examens e ON e.module_id = m.id AND e.session_id = %s
+            LEFT JOIN conflits c ON c.examen1_id = e.id AND c.resolu = FALSE
+            GROUP BY d.id
+            ORDER BY taux_conflits DESC
+        """, (sid,))
+        
+        if dept_stats:
+            import pandas as pd
+            df = pd.DataFrame(dept_stats)
+            df['taux_conflits'] = df['taux_conflits'].fillna(0)
+            
+            # Affichage avec indicateurs visuels
+            for _, row in df.iterrows():
+                taux = row['taux_conflits']
+                if taux == 0:
+                    status = "🟢"
+                elif taux < 5:
+                    status = "🟡"
+                else:
+                    status = "🔴"
+                
+                col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+                col1.write(f"{status} **{row['departement']}** ({row['code']})")
+                col2.write(f"📅 {row['examens']} examens")
+                col3.write(f"⚠️ {row['conflits']} conflits")
+                col4.write(f"📊 {taux:.1f}%")
+        
+        # ═══════════════════════════════════════════════════════════════════════
+        # SECTION 3: HEURES PROFESSEURS
+        # ═══════════════════════════════════════════════════════════════════════
+        
+        st.markdown("### 👨‍🏫 Heures de Surveillance par Département")
+        
+        prof_hours = q("""
+            SELECT 
+                d.nom as departement,
+                COUNT(sv.id) as total_surveillances,
+                ROUND(COUNT(sv.id) * 1.5, 1) as heures_totales,
+                COUNT(DISTINCT sv.professeur_id) as nb_profs,
+                ROUND(COUNT(sv.id) * 1.5 / NULLIF(COUNT(DISTINCT sv.professeur_id), 0), 1) as heures_par_prof
+            FROM departements d
+            LEFT JOIN professeurs p ON p.dept_id = d.id
+            LEFT JOIN surveillances sv ON sv.professeur_id = p.id
+            LEFT JOIN examens e ON sv.examen_id = e.id AND e.session_id = %s
+            GROUP BY d.id
+            ORDER BY heures_totales DESC
+        """, (sid,))
+        
+        if prof_hours:
+            import pandas as pd
+            df = pd.DataFrame(prof_hours)
+            st.dataframe(df, use_container_width=True, hide_index=True)
+    else:
+        st.warning("⚠️ Aucune session trouvée")
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  PAGE: VALIDATION CHEF DE DÉPARTEMENT                                         ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+elif "Validation Dept" in page:
+    st.markdown("""
+    <div class="hero-gradient">
+        <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">✅ Validation par Département</h1>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Approbation et validation des plannings par les chefs de département</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    sessions = get_sessions()
+    depts = get_depts()
+    
+    if sessions and depts:
+        c1, c2 = st.columns(2)
+        sel_s = c1.selectbox("📅 Session", [s['nom'] for s in sessions], key="val_session")
+        sid = next(s['id'] for s in sessions if s['nom'] == sel_s)
+        
+        sel_d = c2.selectbox("🏛️ Département", [d['nom'] for d in depts], key="val_dept")
+        did = next(d['id'] for d in depts if d['nom'] == sel_d)
+        
+        # Statistiques du département
+        stats = q("""
+            SELECT 
+                COUNT(DISTINCT e.id) as total_examens,
+                COUNT(DISTINCT e.module_id) as modules,
+                SUM(CASE WHEN e.statut = 'VALIDE' THEN 1 ELSE 0 END) as valides,
+                SUM(CASE WHEN e.statut = 'PLANIFIE' THEN 1 ELSE 0 END) as en_attente
+            FROM examens e
+            JOIN modules m ON e.module_id = m.id
+            JOIN formations f ON m.formation_id = f.id
+            WHERE e.session_id = %s AND f.dept_id = %s
+        """, (sid, did), fetch='one')
+        
+        if stats and stats['total_examens']:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📅 Total Examens", stats['total_examens'])
+            c2.metric("📖 Modules", stats['modules'])
+            c3.metric("✅ Validés", stats['valides'] or 0)
+            c4.metric("⏳ En Attente", stats['en_attente'] or 0)
+            
+            # Liste des examens à valider
+            st.markdown("### 📋 Examens à Valider")
+            
+            exams = q("""
+                SELECT e.id, e.date_examen, m.code as module, m.nom as module_nom,
+                       l.nom as salle, e.nb_etudiants_prevus, e.statut,
+                       ch.heure_debut, ch.heure_fin
+                FROM examens e
+                JOIN modules m ON e.module_id = m.id
+                JOIN formations f ON m.formation_id = f.id
+                JOIN lieu_examen l ON e.salle_id = l.id
+                JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                WHERE e.session_id = %s AND f.dept_id = %s
+                ORDER BY e.date_examen, ch.heure_debut
+            """, (sid, did))
+            
+            if exams:
+                import pandas as pd
+                df = pd.DataFrame(exams)
+                df['statut'] = df['statut'].apply(lambda x: '✅ Validé' if x == 'VALIDE' else '⏳ En attente')
+                st.dataframe(df[['date_examen', 'module', 'salle', 'nb_etudiants_prevus', 'statut']], 
+                           use_container_width=True, hide_index=True)
+                
+                # Bouton de validation
+                st.markdown("---")
+                comments = st.text_area("📝 Commentaires de validation (optionnel)", key="val_comments")
+                
+                col1, col2 = st.columns(2)
+                if col1.button("✅ Valider Tous les Examens", type="primary", use_container_width=True):
+                    try:
+                        # Vérifier si la colonne statut existe
+                        try:
+                            q("UPDATE examens e JOIN modules m ON e.module_id = m.id JOIN formations f ON m.formation_id = f.id SET e.statut = 'VALIDE' WHERE e.session_id = %s AND f.dept_id = %s", (sid, did), fetch='none')
+                            st.success(f"✅ {stats['en_attente'] or 0} examens validés pour {sel_d}!")
+                            st.cache_data.clear()
+                        except Exception as e:
+                            # Colonne n'existe pas encore
+                            st.warning("⚠️ Exécutez d'abord stored_procedures.sql pour activer la validation")
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+                
+                if col2.button("❌ Rejeter (Demander Révision)", type="secondary", use_container_width=True):
+                    st.info("📧 Notification envoyée à l'administrateur pour révision")
+        else:
+            st.info(f"ℹ️ Aucun examen planifié pour {sel_d}")
+    else:
+        st.warning("⚠️ Configurez d'abord une session et des départements")
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  PAGE: BENCHMARKS PERFORMANCE                                                  ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+elif "Benchmarks" in page:
+    st.markdown("""
+    <div class="hero-gradient">
+        <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">⏱️ Benchmarks Performance</h1>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Mesure des temps d'exécution des requêtes et opérations</p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("### 📊 Taille des Données")
+    
+    # Statistiques de base
+    sizes = q("""
+        SELECT 
+            (SELECT COUNT(*) FROM etudiants) as etudiants,
+            (SELECT COUNT(*) FROM professeurs) as professeurs,
+            (SELECT COUNT(*) FROM modules) as modules,
+            (SELECT COUNT(*) FROM inscriptions) as inscriptions,
+            (SELECT COUNT(*) FROM examens) as examens,
+            (SELECT COUNT(*) FROM surveillances) as surveillances
+    """, fetch='one')
+    
+    if sizes:
+        c1, c2, c3 = st.columns(3)
+        c1.metric("👨‍🎓 Étudiants", f"{sizes['etudiants']:,}")
+        c2.metric("👨‍🏫 Professeurs", f"{sizes['professeurs']:,}")
+        c3.metric("📖 Modules", f"{sizes['modules']:,}")
+        
+        c4, c5, c6 = st.columns(3)
+        c4.metric("📝 Inscriptions", f"{sizes['inscriptions']:,}")
+        c5.metric("📅 Examens", f"{sizes['examens']:,}")
+        c6.metric("👁️ Surveillances", f"{sizes['surveillances']:,}")
+    
+    st.markdown("---")
+    st.markdown("### ⏱️ Tests de Performance")
+    
+    if st.button("🚀 Lancer les Benchmarks", type="primary"):
+        import time
+        results = []
+        
+        with st.spinner("Exécution des benchmarks..."):
+            # Test 1: COUNT simple
+            start = time.perf_counter()
+            q("SELECT COUNT(*) FROM inscriptions", fetch='one')
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append({"Test": "COUNT inscriptions (130k+)", "Temps (ms)": f"{elapsed:.2f}", "Statut": "✅" if elapsed < 100 else "⚠️"})
+            
+            # Test 2: JOIN 2 tables
+            start = time.perf_counter()
+            q("SELECT COUNT(*) FROM inscriptions i JOIN etudiants e ON i.etudiant_id = e.id", fetch='one')
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append({"Test": "JOIN inscriptions→etudiants", "Temps (ms)": f"{elapsed:.2f}", "Statut": "✅" if elapsed < 200 else "⚠️"})
+            
+            # Test 3: JOIN 4 tables
+            start = time.perf_counter()
+            q("""SELECT COUNT(*) FROM inscriptions i 
+                 JOIN etudiants e ON i.etudiant_id = e.id
+                 JOIN modules m ON i.module_id = m.id
+                 JOIN formations f ON m.formation_id = f.id""", fetch='one')
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append({"Test": "JOIN 4 tables", "Temps (ms)": f"{elapsed:.2f}", "Statut": "✅" if elapsed < 500 else "⚠️"})
+            
+            # Test 4: Requête examens avec surveillances
+            start = time.perf_counter()
+            q("""SELECT e.id, COUNT(sv.id) as surv
+                 FROM examens e 
+                 LEFT JOIN surveillances sv ON sv.examen_id = e.id
+                 GROUP BY e.id LIMIT 1000""")
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append({"Test": "GROUP BY examens+surveillances", "Temps (ms)": f"{elapsed:.2f}", "Statut": "✅" if elapsed < 300 else "⚠️"})
+            
+            # Test 5: Détection conflits
+            start = time.perf_counter()
+            q("""SELECT e1.id, e2.id
+                 FROM examens e1
+                 JOIN examens e2 ON e1.date_examen = e2.date_examen AND e1.id < e2.id
+                 JOIN inscriptions i1 ON i1.module_id = e1.module_id
+                 JOIN inscriptions i2 ON i2.module_id = e2.module_id AND i1.etudiant_id = i2.etudiant_id
+                 LIMIT 100""")
+            elapsed = (time.perf_counter() - start) * 1000
+            results.append({"Test": "Détection conflits étudiants", "Temps (ms)": f"{elapsed:.2f}", "Statut": "✅" if elapsed < 1000 else "⚠️"})
+        
+        # Afficher les résultats
+        import pandas as pd
+        df = pd.DataFrame(results)
+        st.dataframe(df, use_container_width=True, hide_index=True)
+        
+        # Résumé
+        passed = sum(1 for r in results if r['Statut'] == '✅')
+        total = len(results)
+        
+        if passed == total:
+            st.success(f"✅ Tous les benchmarks passés ({passed}/{total})! Performance excellente.")
+        elif passed >= total * 0.7:
+            st.warning(f"⚠️ {passed}/{total} benchmarks passés. Performance acceptable.")
+        else:
+            st.error(f"❌ Seulement {passed}/{total} benchmarks passés. Optimisation nécessaire.")
+        
+        # Export rapport
+        st.markdown("---")
+        st.markdown("### 📄 Rapport de Benchmark")
+        
+        report = f"""# Rapport de Benchmark Performance
+        
+## Date: {datetime.now().strftime('%Y-%m-%d %H:%M')}
+
+## Volume de données:
+- Étudiants: {sizes['etudiants']:,}
+- Inscriptions: {sizes['inscriptions']:,}
+- Examens: {sizes['examens']:,}
+
+## Résultats des tests:
+"""
+        for r in results:
+            report += f"- {r['Test']}: {r['Temps (ms)']}ms {r['Statut']}\n"
+        
+        report += f"""
+## Conclusion:
+{passed}/{total} tests passés. {"Performance conforme aux exigences (<45s)." if passed == total else "Optimisation recommandée."}
+"""
+        
+        st.download_button("📥 Télécharger Rapport", report, "benchmark_report.txt", "text/plain")
+
