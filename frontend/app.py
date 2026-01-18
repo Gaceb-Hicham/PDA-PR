@@ -596,71 +596,277 @@ with st.sidebar:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 if "Dashboard" in page:
-    # Welcome Banner
-    st.markdown("""
-    <div class="welcome-banner">
-        <h1>🎓 Bienvenue sur ExamPro</h1>
-        <p>Plateforme Intelligente de Gestion des Emplois du Temps d'Examens</p>
-    </div>
-    """, unsafe_allow_html=True)
+    user = st.session_state.user or {}
+    role = st.session_state.role
     
-    # Stats - CORRIGÉ: examens = modules planifiés distincts
-    stats = q("""SELECT 
-        (SELECT COUNT(*) FROM departements) as depts,
-        (SELECT COUNT(*) FROM formations) as forms,
-        (SELECT COUNT(*) FROM professeurs) as profs,
-        (SELECT COUNT(*) FROM etudiants) as etuds,
-        (SELECT COUNT(*) FROM modules WHERE semestre='S1') as mods,
-        (SELECT COUNT(*) FROM inscriptions) as inscrip,
-        (SELECT COUNT(*) FROM lieu_examen) as salles,
-        (SELECT COUNT(DISTINCT module_id) FROM examens) as exams
-    """, fetch='one')
-    
-    if stats:
+    # ════════════════════════════════════════════════════════════════════════════
+    # DASHBOARD ÉTUDIANT - Vue personnalisée
+    # ════════════════════════════════════════════════════════════════════════════
+    if role == 'ETUDIANT':
+        etudiant_id = user.get('etudiant_id')
+        
+        # Récupérer infos de l'étudiant
+        etud_info = q("""
+            SELECT e.nom, e.prenom, e.matricule, e.groupe, f.nom as formation, 
+                   f.niveau, d.nom as departement
+            FROM etudiants e
+            JOIN formations f ON e.formation_id = f.id
+            JOIN departements d ON f.dept_id = d.id
+            WHERE e.id = %s
+        """, (etudiant_id,), fetch='one') if etudiant_id else None
+        
         st.markdown(f"""
-        <div class="stats-grid">
-            <div class="stat-box">
-                <span class="stat-icon">🏛️</span>
-                <div class="stat-value">{stats['depts'] or 0}</div>
-                <div class="stat-label">Départements</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">📚</span>
-                <div class="stat-value">{stats['forms'] or 0}</div>
-                <div class="stat-label">Formations</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">👨‍🏫</span>
-                <div class="stat-value">{stats['profs'] or 0}</div>
-                <div class="stat-label">Professeurs</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">🏢</span>
-                <div class="stat-value">{stats['salles'] or 0}</div>
-                <div class="stat-label">Salles</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">👨‍🎓</span>
-                <div class="stat-value">{stats['etuds'] or 0:,}</div>
-                <div class="stat-label">Étudiants</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">📖</span>
-                <div class="stat-value">{stats['mods'] or 0}</div>
-                <div class="stat-label">Modules S1</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">📝</span>
-                <div class="stat-value">{stats['inscrip'] or 0:,}</div>
-                <div class="stat-label">Inscriptions</div>
-            </div>
-            <div class="stat-box">
-                <span class="stat-icon">📅</span>
-                <div class="stat-value">{stats['exams'] or 0}</div>
-                <div class="stat-label">Examens planifiés</div>
-            </div>
+        <div class="welcome-banner">
+            <h1>🎓 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
+            <p>Consultez votre emploi du temps d'examens</p>
         </div>
         """, unsafe_allow_html=True)
+        
+        if etud_info:
+            c1, c2, c3, c4 = st.columns(4)
+            c1.metric("📚 Formation", etud_info['formation'][:20] if etud_info['formation'] else '-')
+            c2.metric("🏛️ Département", etud_info['departement'][:15] if etud_info['departement'] else '-')
+            c3.metric("📊 Niveau", etud_info['niveau'] or '-')
+            c4.metric("👥 Groupe", etud_info['groupe'] or '-')
+            
+            # Dates de la session
+            session = q("SELECT date_debut, date_fin, nom FROM sessions_examen ORDER BY date_debut DESC LIMIT 1", fetch='one')
+            if session:
+                st.info(f"📅 **Session:** {session['nom']} | Du **{session['date_debut']}** au **{session['date_fin']}**")
+            
+            # Examens de l'étudiant (SANS info sur les surveillants!)
+            st.markdown("### 📅 Votre Planning d'Examens")
+            
+            mes_examens = q("""
+                SELECT e.date_examen as Date, m.code as Module, m.nom as Matière,
+                       l.nom as Salle, ch.heure_debut as Début, ch.heure_fin as Fin
+                FROM examens e
+                JOIN modules m ON e.module_id = m.id
+                JOIN lieu_examen l ON e.salle_id = l.id
+                JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                JOIN inscriptions i ON i.module_id = m.id
+                WHERE i.etudiant_id = %s
+                ORDER BY e.date_examen, ch.heure_debut
+            """, (etudiant_id,))
+            
+            if mes_examens:
+                import pandas as pd
+                df = pd.DataFrame(mes_examens)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+                
+                nb_futurs = len([e for e in mes_examens if str(e.get('Date', '')) >= str(date.today())])
+                st.success(f"📊 **{len(mes_examens)}** examen(s) au total | **{nb_futurs}** à venir")
+                
+                # Bouton télécharger PDF
+                st.markdown("---")
+                st.markdown("### 📥 Télécharger votre planning")
+                
+                # Générer contenu CSV (format simple pour l'étudiant)
+                csv_content = "Date;Module;Matière;Salle;Début;Fin\n"
+                for ex in mes_examens:
+                    csv_content += f"{ex.get('Date', '')};{ex.get('Module', '')};{ex.get('Matière', '')};{ex.get('Salle', '')};{ex.get('Début', '')};{ex.get('Fin', '')}\n"
+                
+                col_dl1, col_dl2 = st.columns(2)
+                with col_dl1:
+                    st.download_button(
+                        label="📄 Télécharger CSV",
+                        data=csv_content,
+                        file_name=f"planning_{user.get('nom', 'etudiant')}_{etud_info['groupe']}.csv",
+                        mime="text/csv",
+                        use_container_width=True
+                    )
+                with col_dl2:
+                    # Générer HTML pour impression
+                    html_content = f"""
+                    <html><head><meta charset="utf-8">
+                    <style>
+                        body {{ font-family: Arial, sans-serif; padding: 20px; }}
+                        h1 {{ color: #6366F1; text-align: center; }}
+                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
+                        th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
+                        th {{ background: #6366F1; color: white; }}
+                        tr:nth-child(even) {{ background: #f9f9f9; }}
+                        .info {{ background: #EEF2FF; padding: 15px; border-radius: 8px; margin: 10px 0; }}
+                    </style></head><body>
+                    <h1>🎓 Planning d'Examens - {user.get('prenom', '')} {user.get('nom', '')}</h1>
+                    <div class="info">
+                        <strong>Formation:</strong> {etud_info['formation']}<br>
+                        <strong>Groupe:</strong> {etud_info['groupe']}<br>
+                        <strong>Session:</strong> {session['nom'] if session else 'N/A'}
+                    </div>
+                    <table>
+                        <tr><th>Date</th><th>Module</th><th>Matière</th><th>Salle</th><th>Horaire</th></tr>
+                    """
+                    for ex in mes_examens:
+                        html_content += f"<tr><td>{ex.get('Date', '')}</td><td>{ex.get('Module', '')}</td><td>{ex.get('Matière', '')}</td><td>{ex.get('Salle', '')}</td><td>{ex.get('Début', '')} - {ex.get('Fin', '')}</td></tr>"
+                    html_content += "</table><p style='text-align:center; color:#888; margin-top:30px;'>Généré par ExamPro - Université M'Hamed Bougara Boumerdès</p></body></html>"
+                    
+                    st.download_button(
+                        label="🖨️ Version Imprimable (HTML)",
+                        data=html_content,
+                        file_name=f"planning_{user.get('nom', 'etudiant')}_{etud_info['groupe']}.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+            else:
+                st.info("📭 Aucun examen programmé pour le moment")
+        else:
+            st.warning("⚠️ Impossible de charger vos informations")
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # DASHBOARD PROFESSEUR - Mes surveillances
+    # ════════════════════════════════════════════════════════════════════════════
+    elif role == 'PROFESSEUR':
+        prof_id = user.get('professeur_id')
+        
+        st.markdown(f"""
+        <div class="welcome-banner">
+            <h1>👨‍🏫 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
+            <p>Consultez vos surveillances d'examens</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if prof_id:
+            # Stats personnelles
+            mes_stats = q("""
+                SELECT 
+                    COUNT(DISTINCT sv.id) as total_surv,
+                    COUNT(DISTINCT e.date_examen) as jours_travail
+                FROM surveillances sv
+                JOIN examens e ON sv.examen_id = e.id
+                WHERE sv.professeur_id = %s
+            """, (prof_id,), fetch='one')
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("👁️ Mes Surveillances", mes_stats['total_surv'] if mes_stats else 0)
+            c2.metric("📅 Jours de Travail", mes_stats['jours_travail'] if mes_stats else 0)
+            heures = (mes_stats['total_surv'] or 0) * 1.5
+            c3.metric("⏰ Heures Totales", f"{heures:.1f}h")
+            
+            # Mes surveillances
+            st.markdown("### 📅 Mes Surveillances à Venir")
+            
+            mes_surv = q("""
+                SELECT e.date_examen as Date, m.code as Module, 
+                       l.nom as Salle, ch.heure_debut as Début, ch.heure_fin as Fin,
+                       e.nb_etudiants_prevus as Étudiants
+                FROM surveillances sv
+                JOIN examens e ON sv.examen_id = e.id
+                JOIN modules m ON e.module_id = m.id
+                JOIN lieu_examen l ON e.salle_id = l.id
+                JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                WHERE sv.professeur_id = %s AND e.date_examen >= CURDATE()
+                ORDER BY e.date_examen, ch.heure_debut
+            """, (prof_id,))
+            
+            if mes_surv:
+                import pandas as pd
+                df = pd.DataFrame(mes_surv)
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("📭 Aucune surveillance programmée pour le moment")
+        else:
+            st.warning("⚠️ Compte non lié à un professeur")
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # DASHBOARD CHEF DEPT - Vue département
+    # ════════════════════════════════════════════════════════════════════════════
+    elif role == 'CHEF_DEPT':
+        dept_id = user.get('dept_id')
+        dept_nom = user.get('dept_nom', 'Mon Département')
+        
+        st.markdown(f"""
+        <div class="welcome-banner">
+            <h1>🏛️ Tableau de Bord - {dept_nom}</h1>
+            <p>Chef de Département - {user.get('prenom', '')} {user.get('nom', '')}</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        if dept_id:
+            # Stats du département
+            dept_stats = q("""
+                SELECT 
+                    (SELECT COUNT(*) FROM formations WHERE dept_id = %s) as formations,
+                    (SELECT COUNT(*) FROM professeurs WHERE dept_id = %s) as profs,
+                    (SELECT COUNT(DISTINCT e.id) FROM examens e 
+                     JOIN modules m ON e.module_id = m.id 
+                     JOIN formations f ON m.formation_id = f.id 
+                     WHERE f.dept_id = %s) as examens
+            """, (dept_id, dept_id, dept_id), fetch='one')
+            
+            c1, c2, c3 = st.columns(3)
+            c1.metric("📚 Formations", dept_stats['formations'] if dept_stats else 0)
+            c2.metric("👨‍🏫 Professeurs", dept_stats['profs'] if dept_stats else 0)
+            c3.metric("📅 Examens", dept_stats['examens'] if dept_stats else 0)
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # DASHBOARD ADMIN / VICE-DOYEN - Vue complète
+    # ════════════════════════════════════════════════════════════════════════════
+    else:
+        st.markdown("""
+        <div class="welcome-banner">
+            <h1>🎓 Bienvenue sur ExamPro</h1>
+            <p>Plateforme Intelligente de Gestion des Emplois du Temps d'Examens</p>
+        </div>
+        """, unsafe_allow_html=True)
+        
+        # Stats globales - CORRIGÉ: examens = modules planifiés distincts
+        stats = q("""SELECT 
+            (SELECT COUNT(*) FROM departements) as depts,
+            (SELECT COUNT(*) FROM formations) as forms,
+            (SELECT COUNT(*) FROM professeurs) as profs,
+            (SELECT COUNT(*) FROM etudiants) as etuds,
+            (SELECT COUNT(*) FROM modules WHERE semestre='S1') as mods,
+            (SELECT COUNT(*) FROM inscriptions) as inscrip,
+            (SELECT COUNT(*) FROM lieu_examen) as salles,
+            (SELECT COUNT(DISTINCT module_id) FROM examens) as exams
+        """, fetch='one')
+        
+        if stats:
+            st.markdown(f"""
+            <div class="stats-grid">
+                <div class="stat-box">
+                    <span class="stat-icon">🏛️</span>
+                    <div class="stat-value">{stats['depts'] or 0}</div>
+                    <div class="stat-label">Départements</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">📚</span>
+                    <div class="stat-value">{stats['forms'] or 0}</div>
+                    <div class="stat-label">Formations</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">👨‍🏫</span>
+                    <div class="stat-value">{stats['profs'] or 0}</div>
+                    <div class="stat-label">Professeurs</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">🏢</span>
+                    <div class="stat-value">{stats['salles'] or 0}</div>
+                    <div class="stat-label">Salles</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">👨‍🎓</span>
+                    <div class="stat-value">{stats['etuds'] or 0:,}</div>
+                    <div class="stat-label">Étudiants</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">📖</span>
+                    <div class="stat-value">{stats['mods'] or 0}</div>
+                    <div class="stat-label">Modules S1</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">📝</span>
+                    <div class="stat-value">{stats['inscrip'] or 0:,}</div>
+                    <div class="stat-label">Inscriptions</div>
+                </div>
+                <div class="stat-box">
+                    <span class="stat-icon">📅</span>
+                    <div class="stat-value">{stats['exams'] or 0}</div>
+                    <div class="stat-label">Examens planifiés</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
     
     # Quick Actions & Recent Exams
     col1, col2 = st.columns([1, 2])
