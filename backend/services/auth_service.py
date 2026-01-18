@@ -84,9 +84,9 @@ def login_student(nom: str, num_inscription: str) -> Tuple[bool, Optional[Dict],
     
     # Rechercher l'étudiant
     etudiant = execute_query("""
-        SELECT id, nom, prenom, numero_inscription 
+        SELECT id, nom, prenom, matricule 
         FROM etudiants 
-        WHERE LOWER(nom) = LOWER(%s) AND numero_inscription = %s
+        WHERE LOWER(nom) = LOWER(%s) AND matricule = %s
     """, (nom.strip(), num_inscription.strip()), fetch='one')
     
     if not etudiant:
