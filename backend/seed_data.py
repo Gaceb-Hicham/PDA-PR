@@ -437,36 +437,101 @@ def generate_session_examen(cursor) -> int:
 
 
 def generate_utilisateurs(cursor, dept_ids: List[int], profs_by_dept: Dict):
-    """Génère les utilisateurs du système"""
-    # Hash du mot de passe par défaut
-    password = bcrypt.hashpw("password123".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    """
+    Génère les utilisateurs du système avec rôles hiérarchiques:
+    - 1 Vice-Doyen
+    - 1 Admin
+    - 7 Chefs de département (liés aux professeurs)
+    - Tous les professeurs
+    """
     
-    # Admin
+    # Mots de passe par défaut (hashés)
+    pwd_admin = bcrypt.hashpw("Admin2026!".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    pwd_vicedoyen = bcrypt.hashpw("ViceDoyen2026!".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    pwd_chef = bcrypt.hashpw("Chef2026!".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    pwd_prof = bcrypt.hashpw("Prof2026!".encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+    
+    user_count = 0
+    
+    # 1. Vice-Doyen
     cursor.execute("""
-        INSERT INTO utilisateurs (username, password_hash, email, role)
-        VALUES (%s, %s, %s, %s)
-    """, ("admin", password, "admin@univ-boumerdes.dz", "ADMIN"))
+        INSERT INTO utilisateurs (email, password_hash, role, niveau_acces, nom, prenom, actif)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, ("vicedoyen@univ-boumerdes.dz", pwd_vicedoyen, "VICE_DOYEN", 5, "Bensalem", "Mohamed", True))
+    user_count += 1
     
-    # Doyen et Vice-Doyen
+    # 2. Admin
     cursor.execute("""
-        INSERT INTO utilisateurs (username, password_hash, email, role)
-        VALUES (%s, %s, %s, %s)
-    """, ("doyen", password, "doyen@univ-boumerdes.dz", "DOYEN"))
+        INSERT INTO utilisateurs (email, password_hash, role, niveau_acces, nom, prenom, actif)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    """, ("admin@univ-boumerdes.dz", pwd_admin, "ADMIN", 4, "Administrateur", "Système", True))
+    user_count += 1
     
-    cursor.execute("""
-        INSERT INTO utilisateurs (username, password_hash, email, role)
-        VALUES (%s, %s, %s, %s)
-    """, ("vicedoyen", password, "vicedoyen@univ-boumerdes.dz", "VICE_DOYEN"))
-    
-    # Chef de département pour chaque département
+    # 3. Chefs de département (premier professeur de chaque département)
     for idx, dept_id in enumerate(dept_ids):
         dept_code = DEPARTEMENTS[idx]['code'].lower()
-        cursor.execute("""
-            INSERT INTO utilisateurs (username, password_hash, email, role, dept_id)
-            VALUES (%s, %s, %s, %s, %s)
-        """, (f"chef_{dept_code}", password, f"chef.{dept_code}@univ-boumerdes.dz", "CHEF_DEPT", dept_id))
+        dept_nom = DEPARTEMENTS[idx]['nom']
+        
+        if profs_by_dept.get(dept_id):
+            chef_prof_id = profs_by_dept[dept_id][0]  # Premier prof = chef
+            
+            # Récupérer les infos du professeur
+            cursor.execute("SELECT nom, prenom FROM professeurs WHERE id = %s", (chef_prof_id,))
+            prof_info = cursor.fetchone()
+            if prof_info:
+                cursor.execute("""
+                    INSERT INTO utilisateurs 
+                    (email, password_hash, role, niveau_acces, nom, prenom, professeur_id, dept_id, actif)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    f"chef.{dept_code}@univ-boumerdes.dz", 
+                    pwd_chef, 
+                    "CHEF_DEPT", 
+                    3,
+                    prof_info[0],  # nom
+                    prof_info[1],  # prenom
+                    chef_prof_id,
+                    dept_id,
+                    True
+                ))
+                user_count += 1
     
-    print(f"✅ Utilisateurs créés (Admin, Doyen, Vice-Doyen, 7 Chefs de département)")
+    # 4. Tous les professeurs (sauf ceux déjà créés comme chefs)
+    chef_ids = {profs_by_dept[d][0] for d in dept_ids if profs_by_dept.get(d)}
+    
+    for dept_id, prof_ids in profs_by_dept.items():
+        for prof_id in prof_ids:
+            if prof_id in chef_ids:
+                continue  # Déjà créé comme chef
+            
+            cursor.execute("SELECT nom, prenom FROM professeurs WHERE id = %s", (prof_id,))
+            prof_info = cursor.fetchone()
+            if prof_info:
+                # Générer email unique
+                email = f"{prof_info[1].lower()}.{prof_info[0].lower()}@univ-boumerdes.dz"
+                email = email.replace(" ", "").replace("'", "")[:100]
+                
+                try:
+                    cursor.execute("""
+                        INSERT INTO utilisateurs 
+                        (email, password_hash, role, niveau_acces, nom, prenom, professeur_id, dept_id, actif)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                    """, (
+                        email,
+                        pwd_prof,
+                        "PROFESSEUR",
+                        2,
+                        prof_info[0],
+                        prof_info[1],
+                        prof_id,
+                        dept_id,
+                        True
+                    ))
+                    user_count += 1
+                except Exception:
+                    pass  # Ignorer les doublons d'email
+    
+    print(f"✅ {user_count} utilisateurs créés (1 Vice-Doyen, 1 Admin, {len(dept_ids)} Chefs, {user_count - 2 - len(dept_ids)} Professeurs)")
 
 
 def update_chef_departements(cursor, dept_ids: List[int], profs_by_dept: Dict):

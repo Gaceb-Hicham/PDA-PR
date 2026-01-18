@@ -355,28 +355,210 @@ def fmt_time(t):
     return s[:5] if len(s) >= 5 else s
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  SIDEBAR NAVIGATION                                                          ║
+# ║  AUTHENTIFICATION & SESSION                                                   ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-with st.sidebar:
+# Initialiser l'état de session
+if 'authenticated' not in st.session_state:
+    st.session_state.authenticated = False
+    st.session_state.user = None
+    st.session_state.role = None
+    st.session_state.allowed_pages = []
+
+# Import du service d'authentification
+try:
+    from services.auth_service import (
+        login_student, login_user, logout, get_allowed_pages, can_access_page
+    )
+    AUTH_AVAILABLE = True
+except ImportError:
+    AUTH_AVAILABLE = False
+
+# ════════════════════════════════════════════════════════════════════════════════
+# PAGE DE CONNEXION (si non authentifié)
+# ════════════════════════════════════════════════════════════════════════════════
+
+if not st.session_state.authenticated:
+    # CSS pour la page de login
     st.markdown("""
-    <div class="sidebar-logo">
+    <style>
+    .login-container {
+        max-width: 450px;
+        margin: 0 auto;
+        padding: 2rem;
+        background: linear-gradient(135deg, rgba(30, 41, 59, 0.95) 0%, rgba(15, 23, 42, 0.98) 100%);
+        border-radius: 20px;
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    }
+    .login-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    .login-header h1 {
+        font-size: 2.5rem;
+        margin: 0;
+        background: linear-gradient(135deg, #6366F1 0%, #EC4899 100%);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+    }
+    .login-header p {
+        color: #94A3B8;
+        margin-top: 0.5rem;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    st.markdown("""
+    <div class="login-header">
         <h1>⚡ ExamPro</h1>
-        <p>Gestion des Examens</p>
+        <p>Plateforme de Gestion des Examens</p>
+        <p style="font-size: 0.8rem; color: #64748B;">Université M'Hamed Bougara - Boumerdès</p>
     </div>
     """, unsafe_allow_html=True)
     
-    page = st.radio("Navigation", [
-        "🏠 Dashboard",
-        "⚙️ Configuration",
-        "📝 Données",
-        "🚀 Génération",
-        "📊 Plannings",
-        "📄 Export",
-        "📈 KPIs Vice-doyen",
-        "✅ Validation Dept",
-        "⏱️ Benchmarks"
-    ], label_visibility="collapsed")
+    # Choix du type de connexion
+    login_type = st.radio(
+        "Je suis :",
+        ["👨‍🎓 Étudiant", "👨‍🏫 Professeur / Personnel"],
+        horizontal=True,
+        label_visibility="visible"
+    )
+    
+    st.markdown("---")
+    
+    if "Étudiant" in login_type:
+        # Connexion Étudiant (Nom + Numéro d'inscription)
+        st.markdown("### 🎓 Connexion Étudiant")
+        st.info("Utilisez votre nom de famille et numéro d'inscription")
+        
+        col1, col2 = st.columns(2)
+        nom = col1.text_input("Nom de famille", placeholder="Ex: BENALI")
+        num_inscription = col2.text_input("N° Inscription", placeholder="Ex: 202512345")
+        
+        if st.button("🔐 Se connecter", type="primary", use_container_width=True):
+            if AUTH_AVAILABLE:
+                success, user_data, message = login_student(nom, num_inscription)
+                if success:
+                    st.session_state.authenticated = True
+                    st.session_state.user = user_data
+                    st.session_state.role = 'ETUDIANT'
+                    st.session_state.allowed_pages = get_allowed_pages('ETUDIANT')
+                    st.success(f"✅ Bienvenue {user_data.get('prenom', '')} {user_data.get('nom', '')}!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
+            else:
+                # Mode démo sans auth
+                st.session_state.authenticated = True
+                st.session_state.user = {'nom': nom, 'role': 'ETUDIANT'}
+                st.session_state.role = 'ETUDIANT'
+                st.session_state.allowed_pages = ['🏠 Dashboard', '📊 Plannings']
+                st.rerun()
+    else:
+        # Connexion Personnel (Email + Mot de passe)
+        st.markdown("### 👨‍🏫 Connexion Professeur / Personnel")
+        
+        email = st.text_input("Email universitaire", placeholder="prenom.nom@univ-boumerdes.dz")
+        password = st.text_input("Mot de passe", type="password")
+        
+        if st.button("🔐 Se connecter", type="primary", use_container_width=True):
+            if AUTH_AVAILABLE:
+                success, user_data, message = login_user(email, password)
+                if success:
+                    st.session_state.authenticated = True
+                    st.session_state.user = user_data
+                    st.session_state.role = user_data.get('role', 'PROFESSEUR')
+                    st.session_state.allowed_pages = get_allowed_pages(st.session_state.role)
+                    st.success(f"✅ Bienvenue {user_data.get('prenom', '')} {user_data.get('nom', '')}!")
+                    st.rerun()
+                else:
+                    st.error(f"❌ {message}")
+            else:
+                # Mode démo - connexion admin par défaut
+                if email == "admin@univ-boumerdes.dz":
+                    st.session_state.authenticated = True
+                    st.session_state.user = {'nom': 'Admin', 'email': email, 'role': 'ADMIN'}
+                    st.session_state.role = 'ADMIN'
+                    st.session_state.allowed_pages = [
+                        '🏠 Dashboard', '⚙️ Configuration', '📝 Données', 
+                        '🚀 Génération', '📊 Plannings', '📄 Export',
+                        '✅ Validation Dept', '⏱️ Benchmarks'
+                    ]
+                    st.rerun()
+                else:
+                    st.error("❌ Exécutez d'abord auth_tables.sql et regenerez les données")
+        
+        # Aide pour les comptes de test
+        with st.expander("📋 Comptes de démonstration"):
+            st.markdown("""
+            | Rôle | Email | Mot de passe |
+            |------|-------|--------------|
+            | **Vice-doyen** | `vicedoyen@univ-boumerdes.dz` | `ViceDoyen2026!` |
+            | **Admin** | `admin@univ-boumerdes.dz` | `Admin2026!` |
+            | **Chef Dept** | `chef.info@univ-boumerdes.dz` | `Chef2026!` |
+            | **Professeur** | `[prenom].[nom]@univ-boumerdes.dz` | `Prof2026!` |
+            """)
+    
+    st.stop()  # Arrêter l'exécution ici si non authentifié
+
+
+# ╔══════════════════════════════════════════════════════════════════════════════╗
+# ║  SIDEBAR NAVIGATION (utilisateur authentifié)                                 ║
+# ╚══════════════════════════════════════════════════════════════════════════════╝
+
+# Définir les pages accessibles selon le rôle
+ALL_PAGES = [
+    "🏠 Dashboard",
+    "⚙️ Configuration",
+    "📝 Données",
+    "🚀 Génération",
+    "📊 Plannings",
+    "📄 Export",
+    "📈 KPIs Vice-doyen",
+    "✅ Validation Dept",
+    "⏱️ Benchmarks"
+]
+
+# Filtrer selon le rôle (si auth disponible)
+if st.session_state.allowed_pages:
+    available_pages = [p for p in ALL_PAGES if p in st.session_state.allowed_pages]
+else:
+    available_pages = ALL_PAGES  # Fallback: toutes les pages
+
+with st.sidebar:
+    # Info utilisateur connecté
+    user = st.session_state.user or {}
+    role_display = {
+        'ETUDIANT': '🎓 Étudiant',
+        'PROFESSEUR': '👨‍🏫 Professeur',
+        'CHEF_DEPT': '🏛️ Chef Dept',
+        'ADMIN': '⚙️ Admin',
+        'VICE_DOYEN': '👔 Vice-Doyen'
+    }.get(st.session_state.role, '👤 Utilisateur')
+    
+    st.markdown(f"""
+    <div class="sidebar-logo">
+        <h1>⚡ ExamPro</h1>
+        <p style="font-size: 0.75rem; color: #94A3B8;">
+            {role_display}<br/>
+            <strong>{user.get('prenom', '')} {user.get('nom', '')}</strong>
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
+    
+    # Bouton déconnexion
+    if st.button("🚪 Déconnexion", use_container_width=True):
+        st.session_state.authenticated = False
+        st.session_state.user = None
+        st.session_state.role = None
+        st.session_state.allowed_pages = []
+        st.rerun()
+    
+    st.divider()
+    
+    # Navigation filtrée par rôle
+    page = st.radio("Navigation", available_pages, label_visibility="collapsed")
     
     st.divider()
     
@@ -400,11 +582,11 @@ with st.sidebar:
         </div>
         """, unsafe_allow_html=True)
     
-    # Version footer - removed absolute positioning
+    # Version footer
     st.markdown("""
     <div style="margin-top: 2rem; padding-top: 1rem; border-top: 1px solid rgba(255,255,255,0.1);">
         <p style="color: #64748B; font-size: 0.7rem; text-align: center; margin: 0;">
-            v2.0 • Université Boumerdès
+            v2.1 • Authentification activée
         </p>
     </div>
     """, unsafe_allow_html=True)
