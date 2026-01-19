@@ -615,19 +615,37 @@ if "Dashboard" in page:
             WHERE e.id = %s
         """, (etudiant_id,), fetch='one') if etudiant_id else None
         
+        # Bannière personnalisée
         st.markdown(f"""
-        <div class="welcome-banner">
-            <h1>🎓 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
-            <p>Consultez votre emploi du temps d'examens</p>
+        <div style="background: linear-gradient(135deg, #6366F1 0%, #8B5CF6 50%, #EC4899 100%); 
+                    border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 1.8rem;">🎓 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Votre espace personnel - Emploi du temps d'examens</p>
         </div>
         """, unsafe_allow_html=True)
         
         if etud_info:
-            c1, c2, c3, c4 = st.columns(4)
-            c1.metric("📚 Formation", etud_info['formation'][:20] if etud_info['formation'] else '-')
-            c2.metric("🏛️ Département", etud_info['departement'][:15] if etud_info['departement'] else '-')
-            c3.metric("📊 Niveau", etud_info['niveau'] or '-')
-            c4.metric("👥 Groupe", etud_info['groupe'] or '-')
+            # Cartes d'information étudiant
+            st.markdown(f"""
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem; margin-bottom: 1.5rem;">
+                <div style="background: rgba(99,102,241,0.1); border: 1px solid rgba(99,102,241,0.3); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.8rem; color: #94A3B8;">📚 Formation</div>
+                    <div style="font-size: 1rem; font-weight: 600; color: #F8FAFC; margin-top: 0.3rem;">{etud_info['formation'][:25] if etud_info['formation'] else '-'}</div>
+                </div>
+                <div style="background: rgba(139,92,246,0.1); border: 1px solid rgba(139,92,246,0.3); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.8rem; color: #94A3B8;">🏛️ Département</div>
+                    <div style="font-size: 1rem; font-weight: 600; color: #F8FAFC; margin-top: 0.3rem;">{etud_info['departement'][:20] if etud_info['departement'] else '-'}</div>
+                </div>
+                <div style="background: rgba(236,72,153,0.1); border: 1px solid rgba(236,72,153,0.3); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.8rem; color: #94A3B8;">📊 Niveau</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: #F8FAFC; margin-top: 0.3rem;">{etud_info['niveau'] or '-'}</div>
+                </div>
+                <div style="background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.3); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 0.8rem; color: #94A3B8;">👥 Groupe</div>
+                    <div style="font-size: 1.2rem; font-weight: 700; color: #10B981; margin-top: 0.3rem;">{etud_info['groupe'] or '-'}</div>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
             
             # Dates de la session
             session = q("SELECT date_debut, date_fin, nom FROM sessions_examen ORDER BY date_debut DESC LIMIT 1", fetch='one')
@@ -1909,156 +1927,324 @@ elif "Plannings" in page:
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
 elif "Export" in page:
+    user = st.session_state.user or {}
+    role = st.session_state.role
+    
     st.markdown("""
     <div class="hero-gradient">
         <h1 style="color: #F8FAFC; font-size: 2rem; margin: 0;">📄 Export PDF</h1>
-        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Téléchargez les plannings au format PDF</p>
+        <p style="color: #94A3B8; margin: 0.5rem 0 0 0;">Téléchargez votre planning au format PDF</p>
     </div>
     """, unsafe_allow_html=True)
     
-    tab1, tab2, tab3, tab4 = st.tabs(["📚 Formation", "🏛️ Département", "👨‍🏫 Professeur", "🏢 Salle"])
-    
-    with tab1:
-        formations = get_formations()
-        if formations:
-            c1, c2 = st.columns(2)
-            sel_f = c1.selectbox("Formation", [f['nom'] for f in formations], key="ef1")
-            fd = next(f for f in formations if f['nom'] == sel_f)
+    # ════════════════════════════════════════════════════════════════════════════
+    # EXPORT ÉTUDIANT - Uniquement son propre planning
+    # ════════════════════════════════════════════════════════════════════════════
+    if role == 'ETUDIANT':
+        etudiant_id = user.get('etudiant_id')
+        
+        if etudiant_id:
+            # Récupérer infos de l'étudiant
+            etud_info = q("""
+                SELECT e.nom, e.prenom, e.matricule, e.groupe, f.nom as formation, 
+                       f.niveau, d.nom as departement, f.id as formation_id
+                FROM etudiants e
+                JOIN formations f ON e.formation_id = f.id
+                JOIN departements d ON f.dept_id = d.id
+                WHERE e.id = %s
+            """, (etudiant_id,), fetch='one')
             
-            groupes = q("SELECT DISTINCT COALESCE(e.groupe,'G01') as g FROM examens e JOIN modules m ON e.module_id=m.id WHERE m.formation_id=%s ORDER BY g", (fd['id'],))
-            opts = ["Tous (multi-pages)"] + [g['g'] for g in groupes] if groupes else ["G01"]
-            sel_g = c2.selectbox("Groupe", opts, key="eg1")
-            
-            if st.button("📄 Générer PDF", type="primary", key="b1"):
-                if sel_g == "Tous (multi-pages)":
-                    # Récupérer le nom du département pour cette formation
-                    dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
-                    dept_name = dept_info[0]['nom'] if dept_info else ""
+            if etud_info:
+                st.info(f"📚 **Formation:** {etud_info['formation']} | **Groupe:** {etud_info['groupe']}")
+                
+                # Récupérer les examens de l'étudiant
+                mes_examens = q("""
+                    SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                           m.code as module_code, m.nom as module_nom, l.code as salle
+                    FROM examens e
+                    JOIN modules m ON e.module_id = m.id
+                    JOIN lieu_examen l ON e.salle_id = l.id
+                    JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                    JOIN inscriptions i ON i.module_id = m.id
+                    WHERE i.etudiant_id = %s
+                    ORDER BY e.date_examen, ch.heure_debut
+                """, (etudiant_id,))
+                
+                if mes_examens:
+                    st.success(f"📅 {len(mes_examens)} examen(s) dans votre planning")
                     
-                    all_ex = {}
-                    for g in groupes:
-                        # Récupérer examens SANS surveillant (pas besoin pour étudiants)
+                    if st.button("📄 Télécharger Mon Planning PDF", type="primary", use_container_width=True):
+                        try:
+                            from services.pdf_generator import generate_student_schedule_pdf
+                            pdf = generate_student_schedule_pdf(
+                                etud_info['formation'], 
+                                etud_info['groupe'], 
+                                etud_info['niveau'], 
+                                mes_examens, 
+                                etud_info['departement']
+                            )
+                            st.download_button(
+                                "⬇️ Télécharger le PDF", 
+                                pdf, 
+                                f"planning_{user.get('nom', 'etudiant')}_{etud_info['groupe']}.pdf", 
+                                "application/pdf",
+                                use_container_width=True
+                            )
+                        except Exception as e:
+                            st.error(f"Erreur: {e}")
+                else:
+                    st.warning("Aucun examen programmé")
+            else:
+                st.error("Impossible de charger vos informations")
+        else:
+            st.error("Compte non lié à un étudiant")
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # EXPORT PROFESSEUR - Uniquement ses surveillances
+    # ════════════════════════════════════════════════════════════════════════════
+    elif role == 'PROFESSEUR':
+        prof_id = user.get('professeur_id')
+        
+        if prof_id:
+            st.info(f"👨‍🏫 Export de vos surveillances personnelles")
+            
+            survs = q("""
+                SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                       m.code as module_code, m.nom as module_nom, 
+                       f.nom as formation, COALESCE(e.groupe,'G01') as groupe,
+                       d.nom as departement, d.nom as dept,
+                       l.code as salle, s.role
+                FROM surveillances s 
+                JOIN examens e ON s.examen_id=e.id 
+                JOIN modules m ON e.module_id=m.id
+                JOIN formations f ON m.formation_id=f.id
+                JOIN departements d ON f.dept_id=d.id
+                JOIN lieu_examen l ON e.salle_id=l.id 
+                JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                WHERE s.professeur_id=%s ORDER BY e.date_examen
+            """, (prof_id,))
+            
+            if survs:
+                st.success(f"📅 {len(survs)} surveillance(s) programmée(s)")
+                
+                if st.button("📄 Télécharger Mon Planning PDF", type="primary", use_container_width=True):
+                    try:
+                        from services.pdf_generator import generate_professor_schedule_pdf
+                        pdf = generate_professor_schedule_pdf(
+                            user.get('nom', ''), 
+                            user.get('prenom', ''), 
+                            user.get('dept_nom', ''), 
+                            survs
+                        )
+                        st.download_button(
+                            "⬇️ Télécharger le PDF", 
+                            pdf, 
+                            f"surveillances_{user.get('nom', 'prof')}.pdf", 
+                            "application/pdf",
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        st.error(f"Erreur: {e}")
+            else:
+                st.warning("Aucune surveillance programmée")
+        else:
+            st.error("Compte non lié à un professeur")
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # EXPORT CHEF DEPT - Uniquement son département
+    # ════════════════════════════════════════════════════════════════════════════
+    elif role == 'CHEF_DEPT':
+        dept_id = user.get('dept_id')
+        dept_nom = user.get('dept_nom', 'Mon Département')
+        
+        if dept_id:
+            st.info(f"🏛️ Export du département: **{dept_nom}**")
+            
+            tab1, tab2 = st.tabs(["📚 Formations", "👨‍🏫 Professeurs"])
+            
+            with tab1:
+                forms = q("SELECT id, nom, niveau FROM formations WHERE dept_id=%s ORDER BY niveau, nom", (dept_id,))
+                if forms:
+                    st.success(f"📚 {len(forms)} formations dans votre département")
+                    if st.button("📄 Générer PDF Département", type="primary", key="chef_dept_pdf"):
+                        all_data = {}
+                        for f in forms:
+                            ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                    m.code as module_code, m.nom as module_nom, 
+                                    COALESCE(e.groupe,'G01') as groupe, l.code as salle
+                                    FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
+                                    JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                    WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
+                            if ex: all_data[f['nom']] = {'niveau': f['niveau'], 'exams': ex}
+                        if all_data:
+                            try:
+                                from services.pdf_generator import generate_department_pdf
+                                pdf = generate_department_pdf(dept_nom, all_data)
+                                st.download_button("⬇️ Télécharger", pdf, f"dept_{dept_nom}.pdf", "application/pdf")
+                            except Exception as e: st.error(f"Erreur: {e}")
+            
+            with tab2:
+                profs = q("SELECT id, nom, prenom FROM professeurs WHERE dept_id=%s ORDER BY nom", (dept_id,))
+                if profs:
+                    sel_p = st.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs])
+                    pd2 = next(p for p in profs if f"{p['prenom']} {p['nom']}" == sel_p)
+                    
+                    if st.button("📄 Générer PDF Professeur", type="primary", key="chef_prof_pdf"):
+                        survs = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                    m.code as module_code, m.nom as module_nom, f.nom as formation,
+                                    COALESCE(e.groupe,'G01') as groupe, l.code as salle, s.role
+                                    FROM surveillances s JOIN examens e ON s.examen_id=e.id 
+                                    JOIN modules m ON e.module_id=m.id JOIN formations f ON m.formation_id=f.id
+                                    JOIN lieu_examen l ON e.salle_id=l.id JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                    WHERE s.professeur_id=%s ORDER BY e.date_examen""", (pd2['id'],))
+                        if survs:
+                            try:
+                                from services.pdf_generator import generate_professor_schedule_pdf
+                                pdf = generate_professor_schedule_pdf(pd2['nom'], pd2['prenom'], dept_nom, survs)
+                                st.download_button("⬇️ Télécharger", pdf, f"prof_{pd2['nom']}.pdf", "application/pdf")
+                            except Exception as e: st.error(f"Erreur: {e}")
+        else:
+            st.error("Compte non lié à un département")
+    
+    # ════════════════════════════════════════════════════════════════════════════
+    # EXPORT ADMIN / VICE-DOYEN - Accès complet
+    # ════════════════════════════════════════════════════════════════════════════
+    else:
+        tab1, tab2, tab3, tab4 = st.tabs(["📚 Formation", "🏛️ Département", "👨‍🏫 Professeur", "🏢 Salle"])
+    
+        with tab1:
+            formations = get_formations()
+            if formations:
+                c1, c2 = st.columns(2)
+                sel_f = c1.selectbox("Formation", [f['nom'] for f in formations], key="ef1")
+                fd = next(f for f in formations if f['nom'] == sel_f)
+                
+                groupes = q("SELECT DISTINCT COALESCE(e.groupe,'G01') as g FROM examens e JOIN modules m ON e.module_id=m.id WHERE m.formation_id=%s ORDER BY g", (fd['id'],))
+                opts = ["Tous (multi-pages)"] + [g['g'] for g in groupes] if groupes else ["G01"]
+                sel_g = c2.selectbox("Groupe", opts, key="eg1")
+                
+                if st.button("📄 Générer PDF", type="primary", key="b1"):
+                    if sel_g == "Tous (multi-pages)":
+                        dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
+                        dept_name = dept_info[0]['nom'] if dept_info else ""
+                        all_ex = {}
+                        for g in groupes:
+                            ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                    m.code as module_code, m.nom as module_nom, l.code as salle
+                                    FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
+                                    JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                    WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], g['g']))
+                            if ex: all_ex[g['g']] = ex
+                        if all_ex:
+                            try:
+                                from services.pdf_generator import generate_multi_group_pdf
+                                pdf = generate_multi_group_pdf(sel_f, fd['niveau'], all_ex, dept_name)
+                                st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_f}.pdf", "application/pdf")
+                            except Exception as e: st.error(f"Erreur: {e}")
+                    else:
+                        dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
+                        dept_name = dept_info[0]['nom'] if dept_info else ""
                         ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
                                 m.code as module_code, m.nom as module_nom, l.code as salle
                                 FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
                                 JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
-                                WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], g['g']))
-                        if ex: all_ex[g['g']] = ex
-                    if all_ex:
+                                WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], sel_g))
+                        if ex:
+                            try:
+                                from services.pdf_generator import generate_student_schedule_pdf
+                                pdf = generate_student_schedule_pdf(sel_f, sel_g, fd['niveau'], ex, dept_name)
+                                st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_g}.pdf", "application/pdf")
+                            except Exception as e: st.error(f"Erreur: {e}")
+    
+        with tab2:
+            depts = get_depts()
+            if depts:
+                sel_d = st.selectbox("Département", [d['nom'] for d in depts], key="ed2")
+                did = next(d['id'] for d in depts if d['nom'] == sel_d)
+                
+                forms = q("SELECT id, nom, niveau FROM formations WHERE dept_id=%s ORDER BY niveau, nom LIMIT 50", (did,))
+                if forms:
+                    st.success(f"📚 {len(forms)} formations seront incluses")
+                    if st.button("📄 Générer PDF Département", type="primary", key="b2"):
+                        all_data = {}
+                        for f in forms:
+                            ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                    m.code as module_code, m.nom as module_nom, 
+                                    COALESCE(e.groupe,'G01') as groupe, l.code as salle
+                                    FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
+                                    JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                    WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
+                            if ex: all_data[f['nom']] = {'niveau': f['niveau'], 'exams': ex}
+                        if all_data:
+                            try:
+                                from services.pdf_generator import generate_department_pdf
+                                pdf = generate_department_pdf(sel_d, all_data)
+                                st.download_button("⬇️ Télécharger", pdf, f"dept_{sel_d}.pdf", "application/pdf")
+                            except Exception as e: st.error(f"Erreur: {e}")
+    
+        with tab3:
+            depts = get_depts()
+            profs = get_profs()
+            c1, c2 = st.columns([1, 2])
+            df = c1.selectbox("Département", ["Tous"] + [d['nom'] for d in depts], key="epd")
+            if df != "Tous": profs = [p for p in profs if p['dept'] == df]
+            
+            if profs:
+                sel_p = c2.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs], key="ep3")
+                pd2 = next(p for p in profs if f"{p['prenom']} {p['nom']}" == sel_p)
+                
+                if st.button("📄 Générer PDF", type="primary", key="b3"):
+                    survs = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
+                                m.code as module_code, m.nom as module_nom, 
+                                f.nom as formation, COALESCE(e.groupe,'G01') as groupe,
+                                d.nom as departement, d.nom as dept,
+                                l.code as salle, s.role
+                                FROM surveillances s 
+                                JOIN examens e ON s.examen_id=e.id 
+                                JOIN modules m ON e.module_id=m.id
+                                JOIN formations f ON m.formation_id=f.id
+                                JOIN departements d ON f.dept_id=d.id
+                                JOIN lieu_examen l ON e.salle_id=l.id 
+                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
+                                WHERE s.professeur_id=%s ORDER BY e.date_examen""", (pd2['id'],))
+                    if survs:
                         try:
-                            from services.pdf_generator import generate_multi_group_pdf
-                            pdf = generate_multi_group_pdf(sel_f, fd['niveau'], all_ex, dept_name)
-                            st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_f}.pdf", "application/pdf")
+                            from services.pdf_generator import generate_professor_schedule_pdf
+                            pdf = generate_professor_schedule_pdf(pd2['nom'], pd2['prenom'], pd2['dept'], survs)
+                            st.download_button("⬇️ Télécharger", pdf, f"prof_{pd2['nom']}.pdf", "application/pdf")
                         except Exception as e: st.error(f"Erreur: {e}")
-                else:
-                    # Récupérer le nom du département
-                    dept_info = q("SELECT d.nom FROM formations f JOIN departements d ON f.dept_id=d.id WHERE f.id=%s", (fd['id'],))
-                    dept_name = dept_info[0]['nom'] if dept_info else ""
-                    
-                    # Récupérer examens SANS surveillant (pas besoin pour étudiants)
+    
+        with tab4:
+            salles = get_salles()
+            types = list(set(s['type'] for s in salles if s.get('type')))
+            c1, c2 = st.columns([1, 2])
+            tf = c1.selectbox("Type", ["Tous"] + types, key="est")
+            if tf != "Tous": salles = [s for s in salles if s.get('type') == tf]
+            
+            if salles:
+                sel_s = c2.selectbox("Salle", [f"{s['nom']} ({s['capacite']})" for s in salles], key="es4")
+                sd = next(s for s in salles if f"{s['nom']} ({s['capacite']})" == sel_s)
+                
+                if st.button("📄 Générer PDF", type="primary", key="b4"):
                     ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                            m.code as module_code, m.nom as module_nom, l.code as salle
-                            FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
+                            m.code as module_code, m.nom as module_nom, f.nom as formation,
+                            COALESCE(e.groupe,'G01') as groupe,
+                            (SELECT GROUP_CONCAT(CONCAT(p.prenom, ' ', p.nom) SEPARATOR ', ') 
+                             FROM surveillances sv 
+                             JOIN professeurs p ON sv.professeur_id=p.id 
+                             WHERE sv.examen_id=e.id) as surveillant,
+                            COALESCE(e.nb_etudiants_prevus, 0) as nb_etudiants
+                            FROM examens e 
+                            JOIN modules m ON e.module_id=m.id 
+                            JOIN formations f ON m.formation_id=f.id
                             JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
-                            WHERE m.formation_id=%s AND (e.groupe=%s OR e.groupe IS NULL) ORDER BY e.date_examen""", (fd['id'], sel_g))
+                            WHERE e.salle_id=%s ORDER BY e.date_examen""", (sd['id'],))
                     if ex:
                         try:
-                            from services.pdf_generator import generate_student_schedule_pdf
-                            pdf = generate_student_schedule_pdf(sel_f, sel_g, fd['niveau'], ex, dept_name)
-                            st.download_button("⬇️ Télécharger", pdf, f"planning_{sel_g}.pdf", "application/pdf")
+                            from services.pdf_generator import generate_room_schedule_pdf
+                            pdf = generate_room_schedule_pdf(sd['nom'], sd['code'], sd['capacite'], ex)
+                            st.download_button("⬇️ Télécharger", pdf, f"salle_{sd['code']}.pdf", "application/pdf")
                         except Exception as e: st.error(f"Erreur: {e}")
-    
-    with tab2:
-        depts = get_depts()
-        if depts:
-            sel_d = st.selectbox("Département", [d['nom'] for d in depts], key="ed2")
-            did = next(d['id'] for d in depts if d['nom'] == sel_d)
-            
-            forms = q("SELECT id, nom, niveau FROM formations WHERE dept_id=%s ORDER BY niveau, nom LIMIT 50", (did,))
-            if forms:
-                st.success(f"📚 {len(forms)} formations seront incluses")
-                if st.button("📄 Générer PDF Département", type="primary", key="b2"):
-                    all_data = {}
-                    for f in forms:
-                        # Sans surveillant (déjà retiré du PDF département)
-                        ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                                m.code as module_code, m.nom as module_nom, 
-                                COALESCE(e.groupe,'G01') as groupe, l.code as salle
-                                FROM examens e JOIN modules m ON e.module_id=m.id JOIN lieu_examen l ON e.salle_id=l.id
-                                JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
-                                WHERE m.formation_id=%s ORDER BY e.groupe, e.date_examen""", (f['id'],))
-                        if ex: all_data[f['nom']] = {'niveau': f['niveau'], 'exams': ex}
-                    if all_data:
-                        try:
-                            from services.pdf_generator import generate_department_pdf
-                            pdf = generate_department_pdf(sel_d, all_data)
-                            st.download_button("⬇️ Télécharger", pdf, f"dept_{sel_d}.pdf", "application/pdf")
-                        except Exception as e: st.error(f"Erreur: {e}")
-    
-    with tab3:
-        depts = get_depts()
-        profs = get_profs()
-        c1, c2 = st.columns([1, 2])
-        df = c1.selectbox("Département", ["Tous"] + [d['nom'] for d in depts], key="epd")
-        if df != "Tous": profs = [p for p in profs if p['dept'] == df]
-        
-        if profs:
-            sel_p = c2.selectbox("Professeur", [f"{p['prenom']} {p['nom']}" for p in profs], key="ep3")
-            pd2 = next(p for p in profs if f"{p['prenom']} {p['nom']}" == sel_p)
-            
-            if st.button("📄 Générer PDF", type="primary", key="b3"):
-                survs = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                            m.code as module_code, m.nom as module_nom, 
-                            f.nom as formation, COALESCE(e.groupe,'G01') as groupe,
-                            d.nom as departement, d.nom as dept,
-                            l.code as salle, s.role
-                            FROM surveillances s 
-                            JOIN examens e ON s.examen_id=e.id 
-                            JOIN modules m ON e.module_id=m.id
-                            JOIN formations f ON m.formation_id=f.id
-                            JOIN departements d ON f.dept_id=d.id
-                            JOIN lieu_examen l ON e.salle_id=l.id 
-                            JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
-                            WHERE s.professeur_id=%s ORDER BY e.date_examen""", (pd2['id'],))
-                if survs:
-                    try:
-                        from services.pdf_generator import generate_professor_schedule_pdf
-                        pdf = generate_professor_schedule_pdf(pd2['nom'], pd2['prenom'], pd2['dept'], survs)
-                        st.download_button("⬇️ Télécharger", pdf, f"prof_{pd2['nom']}.pdf", "application/pdf")
-                    except Exception as e: st.error(f"Erreur: {e}")
-    
-    with tab4:
-        salles = get_salles()
-        types = list(set(s['type'] for s in salles if s.get('type')))
-        c1, c2 = st.columns([1, 2])
-        tf = c1.selectbox("Type", ["Tous"] + types, key="est")
-        if tf != "Tous": salles = [s for s in salles if s.get('type') == tf]
-        
-        if salles:
-            sel_s = c2.selectbox("Salle", [f"{s['nom']} ({s['capacite']})" for s in salles], key="es4")
-            sd = next(s for s in salles if f"{s['nom']} ({s['capacite']})" == sel_s)
-            
-            if st.button("📄 Générer PDF", type="primary", key="b4"):
-                # Récupérer TOUS les surveillants avec GROUP_CONCAT et nb_etudiants_prevus réel
-                ex = q("""SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
-                        m.code as module_code, m.nom as module_nom, f.nom as formation,
-                        COALESCE(e.groupe,'G01') as groupe,
-                        (SELECT GROUP_CONCAT(CONCAT(p.prenom, ' ', p.nom) SEPARATOR ', ') 
-                         FROM surveillances sv 
-                         JOIN professeurs p ON sv.professeur_id=p.id 
-                         WHERE sv.examen_id=e.id) as surveillant,
-                        COALESCE(e.nb_etudiants_prevus, 0) as nb_etudiants
-                        FROM examens e 
-                        JOIN modules m ON e.module_id=m.id 
-                        JOIN formations f ON m.formation_id=f.id
-                        JOIN creneaux_horaires ch ON e.creneau_id=ch.id 
-                        WHERE e.salle_id=%s ORDER BY e.date_examen""", (sd['id'],))
-                if ex:
-                    try:
-                        from services.pdf_generator import generate_room_schedule_pdf
-                        pdf = generate_room_schedule_pdf(sd['nom'], sd['code'], sd['capacite'], ex)
-                        st.download_button("⬇️ Télécharger", pdf, f"salle_{sd['code']}.pdf", "application/pdf")
-                    except Exception as e: st.error(f"Erreur: {e}")
 
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗

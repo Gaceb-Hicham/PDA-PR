@@ -30,9 +30,10 @@ ROLE_LEVELS = {
 }
 
 # Pages accessibles par rôle (fallback si la table permissions_role n'existe pas)
+# IMPORTANT: Les étudiants n'ont PAS accès à 'plannings' pour éviter qu'ils voient les autres plannings
 ROLE_PAGES = {
-    'ETUDIANT': ['dashboard', 'plannings'],
-    'PROFESSEUR': ['dashboard', 'plannings', 'export'],
+    'ETUDIANT': ['dashboard', 'export'],  # Dashboard = leur planning, Export = télécharger LEUR planning uniquement
+    'PROFESSEUR': ['dashboard', 'export'],  # Dashboard = leurs surveillances, Export = télécharger LEUR planning
     'CHEF_DEPT': ['dashboard', 'plannings', 'export', 'validation_dept'],
     'ADMIN': ['dashboard', 'configuration', 'donnees', 'generation', 'plannings', 'export', 'validation_dept', 'benchmarks'],
     'VICE_DOYEN': ['dashboard', 'configuration', 'donnees', 'generation', 'plannings', 'export', 'validation_dept', 'kpis_vicedoyen', 'benchmarks']
