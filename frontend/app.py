@@ -453,7 +453,7 @@ if not st.session_state.authenticated:
                 st.session_state.authenticated = True
                 st.session_state.user = {'nom': nom, 'role': 'ETUDIANT'}
                 st.session_state.role = 'ETUDIANT'
-                st.session_state.allowed_pages = ['🏠 Dashboard', '📊 Plannings']
+                st.session_state.allowed_pages = ['🏠 Dashboard', '📄 Export']  # Pas de Plannings pour étudiants
                 st.rerun()
     else:
         # Connexion Personnel (Email + Mot de passe)
@@ -520,11 +520,24 @@ ALL_PAGES = [
     "⏱️ Benchmarks"
 ]
 
-# Filtrer selon le rôle (si auth disponible)
-if st.session_state.allowed_pages:
+# Filtrer selon le rôle - EXPLICITE pour garantir les restrictions
+current_role = st.session_state.role
+
+# Pages strictement autorisées par rôle (override toute config BDD)
+STRICT_ROLE_PAGES = {
+    'ETUDIANT': ["🏠 Dashboard", "📄 Export"],
+    'PROFESSEUR': ["🏠 Dashboard", "📄 Export"],
+    'CHEF_DEPT': ["🏠 Dashboard", "📊 Plannings", "📄 Export", "✅ Validation Dept"],
+    'ADMIN': ALL_PAGES,
+    'VICE_DOYEN': ALL_PAGES
+}
+
+if current_role in STRICT_ROLE_PAGES:
+    available_pages = [p for p in ALL_PAGES if p in STRICT_ROLE_PAGES[current_role]]
+elif st.session_state.allowed_pages:
     available_pages = [p for p in ALL_PAGES if p in st.session_state.allowed_pages]
 else:
-    available_pages = ALL_PAGES  # Fallback: toutes les pages
+    available_pages = ALL_PAGES  # Fallback: toutes les pages (ne devrait pas arriver)
 
 with st.sidebar:
     # Info utilisateur connecté
@@ -608,7 +621,7 @@ if "Dashboard" in page:
         # Récupérer infos de l'étudiant
         etud_info = q("""
             SELECT e.nom, e.prenom, e.matricule, e.groupe, f.nom as formation, 
-                   f.niveau, d.nom as departement
+                   f.niveau, f.id as formation_id, d.nom as departement
             FROM etudiants e
             JOIN formations f ON e.formation_id = f.id
             JOIN departements d ON f.dept_id = d.id
@@ -655,22 +668,39 @@ if "Dashboard" in page:
             # Examens de l'étudiant (SANS info sur les surveillants!)
             st.markdown("### 📅 Votre Planning d'Examens")
             
+            # Récupérer le groupe de l'étudiant pour filtrer les examens
+            groupe_etudiant = etud_info['groupe']
+            
             mes_examens = q("""
                 SELECT e.date_examen as Date, m.code as Module, m.nom as Matière,
-                       l.nom as Salle, ch.heure_debut as Début, ch.heure_fin as Fin
+                       l.nom as Salle, ch.heure_debut, ch.heure_fin
                 FROM examens e
                 JOIN modules m ON e.module_id = m.id
                 JOIN lieu_examen l ON e.salle_id = l.id
                 JOIN creneaux_horaires ch ON e.creneau_id = ch.id
-                JOIN inscriptions i ON i.module_id = m.id
-                WHERE i.etudiant_id = %s
+                WHERE m.formation_id = %s 
+                  AND (e.groupe = %s OR e.groupe IS NULL)
                 ORDER BY e.date_examen, ch.heure_debut
-            """, (etudiant_id,))
+            """, (etud_info.get('formation_id'), groupe_etudiant,))
+            
+            # Formater les heures pour l'affichage
+            def fmt_time(t):
+                if t is None: return ""
+                if hasattr(t, 'strftime'): return t.strftime('%H:%M')
+                s = str(t)
+                return s[:5] if len(s) >= 5 else s
+            
+            for ex in (mes_examens or []):
+                ex['Début'] = fmt_time(ex.get('heure_debut'))
+                ex['Fin'] = fmt_time(ex.get('heure_fin'))
             
             if mes_examens:
                 import pandas as pd
                 df = pd.DataFrame(mes_examens)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                # Sélectionner uniquement les colonnes formatées pour l'affichage
+                display_cols = ['Date', 'Module', 'Matière', 'Salle', 'Début', 'Fin']
+                df_display = df[[col for col in display_cols if col in df.columns]]
+                st.dataframe(df_display, use_container_width=True, hide_index=True)
                 
                 nb_futurs = len([e for e in mes_examens if str(e.get('Date', '')) >= str(date.today())])
                 st.success(f"📊 **{len(mes_examens)}** examen(s) au total | **{nb_futurs}** à venir")
@@ -679,51 +709,54 @@ if "Dashboard" in page:
                 st.markdown("---")
                 st.markdown("### 📥 Télécharger votre planning")
                 
-                # Générer contenu CSV (format simple pour l'étudiant)
-                csv_content = "Date;Module;Matière;Salle;Début;Fin\n"
-                for ex in mes_examens:
-                    csv_content += f"{ex.get('Date', '')};{ex.get('Module', '')};{ex.get('Matière', '')};{ex.get('Salle', '')};{ex.get('Début', '')};{ex.get('Fin', '')}\n"
-                
                 col_dl1, col_dl2 = st.columns(2)
+                
+                # Bouton PDF (format officiel)
                 with col_dl1:
-                    st.download_button(
-                        label="📄 Télécharger CSV",
-                        data=csv_content,
-                        file_name=f"planning_{user.get('nom', 'etudiant')}_{etud_info['groupe']}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                    if st.button("📄 Générer PDF Officiel", type="primary", use_container_width=True, key="gen_pdf_etud"):
+                        try:
+                            # Préparer les données pour le PDF
+                            exams_for_pdf = []
+                            for ex in mes_examens:
+                                exams_for_pdf.append({
+                                    'date': ex.get('Date', ''),
+                                    'heure_debut': ex.get('Début', ''),
+                                    'heure_fin': ex.get('Fin', ''),
+                                    'module_code': ex.get('Module', ''),
+                                    'module_nom': ex.get('Matière', ''),
+                                    'salle': ex.get('Salle', '')
+                                })
+                            
+                            from services.pdf_generator import generate_student_schedule_pdf
+                            pdf = generate_student_schedule_pdf(
+                                etud_info['formation'], 
+                                etud_info['groupe'], 
+                                etud_info['niveau'], 
+                                exams_for_pdf, 
+                                etud_info['departement']
+                            )
+                            st.download_button(
+                                "⬇️ Télécharger le PDF",
+                                pdf,
+                                f"planning_{etud_info['groupe']}.pdf",
+                                "application/pdf",
+                                use_container_width=True
+                            )
+                            st.success("✅ PDF généré avec succès!")
+                        except Exception as e:
+                            st.error(f"Erreur génération PDF: {e}")
+                
+                # CSV simple
                 with col_dl2:
-                    # Générer HTML pour impression
-                    html_content = f"""
-                    <html><head><meta charset="utf-8">
-                    <style>
-                        body {{ font-family: Arial, sans-serif; padding: 20px; }}
-                        h1 {{ color: #6366F1; text-align: center; }}
-                        table {{ width: 100%; border-collapse: collapse; margin-top: 20px; }}
-                        th, td {{ border: 1px solid #ddd; padding: 10px; text-align: left; }}
-                        th {{ background: #6366F1; color: white; }}
-                        tr:nth-child(even) {{ background: #f9f9f9; }}
-                        .info {{ background: #EEF2FF; padding: 15px; border-radius: 8px; margin: 10px 0; }}
-                    </style></head><body>
-                    <h1>🎓 Planning d'Examens - {user.get('prenom', '')} {user.get('nom', '')}</h1>
-                    <div class="info">
-                        <strong>Formation:</strong> {etud_info['formation']}<br>
-                        <strong>Groupe:</strong> {etud_info['groupe']}<br>
-                        <strong>Session:</strong> {session['nom'] if session else 'N/A'}
-                    </div>
-                    <table>
-                        <tr><th>Date</th><th>Module</th><th>Matière</th><th>Salle</th><th>Horaire</th></tr>
-                    """
+                    csv_content = "Date;Module;Matière;Salle;Début;Fin\n"
                     for ex in mes_examens:
-                        html_content += f"<tr><td>{ex.get('Date', '')}</td><td>{ex.get('Module', '')}</td><td>{ex.get('Matière', '')}</td><td>{ex.get('Salle', '')}</td><td>{ex.get('Début', '')} - {ex.get('Fin', '')}</td></tr>"
-                    html_content += "</table><p style='text-align:center; color:#888; margin-top:30px;'>Généré par ExamPro - Université M'Hamed Bougara Boumerdès</p></body></html>"
+                        csv_content += f"{ex.get('Date', '')};{ex.get('Module', '')};{ex.get('Matière', '')};{ex.get('Salle', '')};{ex.get('Début', '')};{ex.get('Fin', '')}\n"
                     
                     st.download_button(
-                        label="🖨️ Version Imprimable (HTML)",
-                        data=html_content,
-                        file_name=f"planning_{user.get('nom', 'etudiant')}_{etud_info['groupe']}.html",
-                        mime="text/html",
+                        label="📊 Télécharger CSV",
+                        data=csv_content,
+                        file_name=f"planning_{etud_info['groupe']}.csv",
+                        mime="text/csv",
                         use_container_width=True
                     )
             else:
