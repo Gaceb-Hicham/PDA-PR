@@ -492,12 +492,25 @@ if not st.session_state.authenticated:
         # Aide pour les comptes de test
         with st.expander("📋 Comptes de démonstration"):
             st.markdown("""
+            **👨‍🏫 Connexion Professeur/Personnel (Email + Mot de passe):**
+            
             | Rôle | Email | Mot de passe |
-            |------|-------|--------------|
+            |------|-------|--------------| 
             | **Vice-doyen** | `vicedoyen@univ-boumerdes.dz` | `ViceDoyen2026!` |
             | **Admin** | `admin@univ-boumerdes.dz` | `Admin2026!` |
             | **Chef Dept** | `chef.info@univ-boumerdes.dz` | `Chef2026!` |
             | **Professeur** | `[prenom].[nom]@univ-boumerdes.dz` | `Prof2026!` |
+            | **Professeur** | `Marguerite.Alexandre@univ-boumerdes.dz` | `Prof2026!` |
+
+            ---
+            
+            **🎓 Connexion Étudiant (Nom + N° Inscription, SANS mot de passe):**
+            
+            | Nom | N° Inscription |
+            |-----|----------------|
+            | Aubert |  E01060045 |
+            
+            > 💡 **Astuce:** Pour trouver un étudiant, consultez la table `etudiants` dans la base de données.
             """)
     
     st.stop()  # Arrêter l'exécution ici si non authentifié
