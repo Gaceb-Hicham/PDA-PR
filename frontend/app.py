@@ -575,25 +575,26 @@ with st.sidebar:
     
     st.divider()
     
-    # Mini stats in sidebar - CORRIGÉ: modules planifiés distincts
-    stats = q("""SELECT 
-        (SELECT COUNT(DISTINCT module_id) FROM examens) as exams,
-        (SELECT COUNT(*) FROM professeurs) as profs
-    """, fetch='one')
-    
-    if stats:
-        st.markdown(f"""
-        <div style="display: flex; gap: 0.5rem; padding: 0 0.5rem;">
-            <div style="flex: 1; background: rgba(99,102,241,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
-                <div style="font-size: 0.7rem; color: #64748B;">📅 Modules</div>
-                <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['exams'] or 0}</div>
+    # Mini stats in sidebar - ADMIN/CHEF DEPT seulement
+    if current_role in ['ADMIN', 'VICE_DOYEN', 'CHEF_DEPT']:
+        stats = q("""SELECT 
+            (SELECT COUNT(DISTINCT module_id) FROM examens) as exams,
+            (SELECT COUNT(*) FROM professeurs) as profs
+        """, fetch='one')
+        
+        if stats:
+            st.markdown(f"""
+            <div style="display: flex; gap: 0.5rem; padding: 0 0.5rem;">
+                <div style="flex: 1; background: rgba(99,102,241,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
+                    <div style="font-size: 0.7rem; color: #64748B;">📅 Modules</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['exams'] or 0}</div>
+                </div>
+                <div style="flex: 1; background: rgba(236,72,153,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
+                    <div style="font-size: 0.7rem; color: #64748B;">👨‍🏫 Profs</div>
+                    <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['profs'] or 0}</div>
+                </div>
             </div>
-            <div style="flex: 1; background: rgba(236,72,153,0.15); border-radius: 12px; padding: 0.75rem; text-align: center;">
-                <div style="font-size: 0.7rem; color: #64748B;">👨‍🏫 Profs</div>
-                <div style="font-size: 1.25rem; font-weight: 700; color: #F8FAFC;">{stats['profs'] or 0}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+            """, unsafe_allow_html=True)
     
     # Version footer
     st.markdown("""
@@ -2111,7 +2112,10 @@ elif "Export" in page:
             if etud_info:
                 st.info(f"📚 **Formation:** {etud_info['formation']} | **Groupe:** {etud_info['groupe']}")
                 
-                # Récupérer les examens de l'étudiant
+                # Récupérer les examens de l'étudiant (filtré par formation ET groupe)
+                groupe_etudiant = etud_info['groupe']
+                formation_id = etud_info['formation_id']
+                
                 mes_examens = q("""
                     SELECT e.date_examen as date, ch.heure_debut, ch.heure_fin, 
                            m.code as module_code, m.nom as module_nom, l.code as salle
@@ -2119,10 +2123,10 @@ elif "Export" in page:
                     JOIN modules m ON e.module_id = m.id
                     JOIN lieu_examen l ON e.salle_id = l.id
                     JOIN creneaux_horaires ch ON e.creneau_id = ch.id
-                    JOIN inscriptions i ON i.module_id = m.id
-                    WHERE i.etudiant_id = %s
+                    WHERE m.formation_id = %s 
+                      AND (e.groupe = %s OR e.groupe IS NULL)
                     ORDER BY e.date_examen, ch.heure_debut
-                """, (etudiant_id,))
+                """, (formation_id, groupe_etudiant,))
                 
                 if mes_examens:
                     st.success(f"📅 {len(mes_examens)} examen(s) dans votre planning")
