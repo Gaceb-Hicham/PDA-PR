@@ -228,7 +228,7 @@ CREATE TABLE surveillances (
     id INT AUTO_INCREMENT PRIMARY KEY,
     examen_id INT NOT NULL,
     professeur_id INT NOT NULL,
-    role ENUM('RESPONSABLE', 'SURVEILLANT') NOT NULL DEFAULT 'SURVEILLANT',
+    role ENUM('SURVEILLANT') NOT NULL DEFAULT 'SURVEILLANT',
     present BOOLEAN DEFAULT NULL,
     remarques TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -360,9 +360,7 @@ SELECT
     p.nom,
     p.prenom,
     d.nom AS departement,
-    COUNT(s.id) AS nb_surveillances,
-    SUM(CASE WHEN s.role = 'RESPONSABLE' THEN 1 ELSE 0 END) AS nb_responsable,
-    SUM(CASE WHEN s.role = 'SURVEILLANT' THEN 1 ELSE 0 END) AS nb_surveillant
+    COUNT(s.id) AS nb_surveillances
 FROM professeurs p
 JOIN departements d ON p.dept_id = d.id
 LEFT JOIN surveillances s ON s.professeur_id = p.id

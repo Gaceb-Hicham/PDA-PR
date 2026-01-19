@@ -581,13 +581,12 @@ class ExamScheduler:
                 ))
                 exam_id = cursor.lastrowid
                 
-                # Insérer TOUS les surveillants
+                # Insérer TOUS les surveillants (uniquement rôle SURVEILLANT)
                 for idx, prof_id in enumerate(se.prof_ids):
-                    role = 'RESPONSABLE' if idx == 0 else 'SURVEILLANT'
                     cursor.execute("""
                         INSERT INTO surveillances (examen_id, professeur_id, role)
                         VALUES (%s, %s, %s)
-                    """, (exam_id, prof_id, role))
+                    """, (exam_id, prof_id, 'SURVEILLANT'))
         
         print(f"✅ {len(self.scheduled_exams)} examens sauvegardés")
     

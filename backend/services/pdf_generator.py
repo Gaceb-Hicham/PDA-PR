@@ -308,9 +308,8 @@ def generate_professor_schedule_pdf(prof_nom, prof_prenom, departement, surveill
         
         # Stats
         elements.append(Spacer(1, 8))
-        nb_resp = sum(1 for s in surveillances if 'RESP' in str(s.get('role', '')).upper())
         elements.append(Paragraph(
-            f"<b>Total: {len(surveillances)} surveillances</b> ({nb_resp} responsable, {len(surveillances)-nb_resp} assistant)",
+            f"<b>Total: {len(surveillances)} surveillance(s)</b>",
             styles['InfoText']
         ))
     
