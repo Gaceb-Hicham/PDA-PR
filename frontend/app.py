@@ -695,15 +695,67 @@ if "Dashboard" in page:
                 ex['Fin'] = fmt_time(ex.get('heure_fin'))
             
             if mes_examens:
-                import pandas as pd
-                df = pd.DataFrame(mes_examens)
-                # Sélectionner uniquement les colonnes formatées pour l'affichage
-                display_cols = ['Date', 'Module', 'Matière', 'Salle', 'Début', 'Fin']
-                df_display = df[[col for col in display_cols if col in df.columns]]
-                st.dataframe(df_display, use_container_width=True, hide_index=True)
-                
+                # Compter les examens à venir
                 nb_futurs = len([e for e in mes_examens if str(e.get('Date', '')) >= str(date.today())])
-                st.success(f"📊 **{len(mes_examens)}** examen(s) au total | **{nb_futurs}** à venir")
+                nb_total = len(mes_examens)
+                
+                # Afficher statistiques
+                stat_cols = st.columns(3)
+                with stat_cols[0]:
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #6366F1, #818CF8); border-radius: 12px; padding: 1.2rem; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700; color: white;">{nb_total}</div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">Examens Programmés</div>
+                    </div>""", unsafe_allow_html=True)
+                with stat_cols[1]:
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #10B981, #34D399); border-radius: 12px; padding: 1.2rem; text-align: center;">
+                        <div style="font-size: 2rem; font-weight: 700; color: white;">{nb_futurs}</div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">À Venir</div>
+                    </div>""", unsafe_allow_html=True)
+                with stat_cols[2]:
+                    prochain = next((e for e in mes_examens if str(e.get('Date', '')) >= str(date.today())), None)
+                    prochain_text = str(prochain['Date'])[:10] if prochain else "Aucun"
+                    st.markdown(f"""
+                    <div style="background: linear-gradient(135deg, #F59E0B, #FBBF24); border-radius: 12px; padding: 1.2rem; text-align: center;">
+                        <div style="font-size: 1.2rem; font-weight: 700; color: white;">{prochain_text}</div>
+                        <div style="font-size: 0.85rem; color: rgba(255,255,255,0.8);">Prochain Examen</div>
+                    </div>""", unsafe_allow_html=True)
+                
+                st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+                
+                # Tableau stylisé des examens - SANS surveillant
+                st.markdown("""
+                <style>
+                .exam-table { width: 100%; border-collapse: separate; border-spacing: 0; border-radius: 12px; overflow: hidden; background: rgba(30,41,59,0.6); border: 1px solid rgba(99,102,241,0.2); }
+                .exam-table th { background: linear-gradient(135deg, #6366F1, #8B5CF6); color: white; padding: 14px 12px; font-weight: 600; font-size: 0.9rem; text-align: left; }
+                .exam-table td { padding: 12px; border-bottom: 1px solid rgba(255,255,255,0.05); color: #E2E8F0; font-size: 0.9rem; }
+                .exam-table tr:hover td { background: rgba(99,102,241,0.1); }
+                .exam-table tr:nth-child(even) td { background: rgba(15,23,42,0.3); }
+                .exam-table tr:nth-child(even):hover td { background: rgba(99,102,241,0.15); }
+                .date-badge { background: rgba(99,102,241,0.2); color: #A5B4FC; padding: 4px 10px; border-radius: 6px; font-weight: 600; }
+                .time-badge { background: rgba(16,185,129,0.15); color: #6EE7B7; padding: 3px 8px; border-radius: 4px; font-size: 0.85rem; }
+                .salle-badge { background: rgba(236,72,153,0.15); color: #F9A8D4; padding: 3px 8px; border-radius: 4px; }
+                </style>
+                """, unsafe_allow_html=True)
+                
+                # Construire le tableau HTML
+                table_html = """<table class="exam-table">
+                <tr><th>📅 Date</th><th>⏰ Horaire</th><th>📚 Module</th><th>📖 Matière</th><th>🏛️ Salle</th></tr>"""
+                
+                for ex in mes_examens:
+                    date_str = str(ex.get('Date', ''))[:10]
+                    horaire = f"{ex.get('Début', '')} - {ex.get('Fin', '')}"
+                    table_html += f"""<tr>
+                        <td><span class="date-badge">{date_str}</span></td>
+                        <td><span class="time-badge">{horaire}</span></td>
+                        <td><strong>{ex.get('Module', '')}</strong></td>
+                        <td>{ex.get('Matière', '')[:35]}{'...' if len(str(ex.get('Matière', ''))) > 35 else ''}</td>
+                        <td><span class="salle-badge">{ex.get('Salle', '')}</span></td>
+                    </tr>"""
+                
+                table_html += "</table>"
+                st.markdown(table_html, unsafe_allow_html=True)
                 
                 # Bouton télécharger PDF
                 st.markdown("---")
@@ -770,40 +822,69 @@ if "Dashboard" in page:
     elif role == 'PROFESSEUR':
         prof_id = user.get('professeur_id')
         
+        # Bannière premium
         st.markdown(f"""
-        <div class="welcome-banner">
-            <h1>👨‍🏫 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
-            <p>Consultez vos surveillances d'examens</p>
+        <div style="background: linear-gradient(135deg, #059669 0%, #10B981 50%, #34D399 100%); 
+                    border-radius: 16px; padding: 2rem; margin-bottom: 1.5rem; text-align: center;">
+            <h1 style="color: white; margin: 0; font-size: 1.8rem;">👨‍🏫 Bienvenue {user.get('prenom', '')} {user.get('nom', '')}</h1>
+            <p style="color: rgba(255,255,255,0.9); margin: 0.5rem 0 0 0;">Votre planning de surveillances d'examens</p>
         </div>
         """, unsafe_allow_html=True)
         
         if prof_id:
-            # Stats personnelles
+            # Stats personnelles avec cartes gradient
             mes_stats = q("""
                 SELECT 
                     COUNT(DISTINCT sv.id) as total_surv,
-                    COUNT(DISTINCT e.date_examen) as jours_travail
+                    COUNT(DISTINCT e.date_examen) as jours_travail,
+                    COUNT(DISTINCT CASE WHEN e.date_examen >= CURDATE() THEN sv.id END) as a_venir
                 FROM surveillances sv
                 JOIN examens e ON sv.examen_id = e.id
                 WHERE sv.professeur_id = %s
             """, (prof_id,), fetch='one')
             
-            c1, c2, c3 = st.columns(3)
-            c1.metric("👁️ Mes Surveillances", mes_stats['total_surv'] if mes_stats else 0)
-            c2.metric("📅 Jours de Travail", mes_stats['jours_travail'] if mes_stats else 0)
-            heures = (mes_stats['total_surv'] or 0) * 1.5
-            c3.metric("⏰ Heures Totales", f"{heures:.1f}h")
+            total_surv = mes_stats['total_surv'] if mes_stats else 0
+            jours = mes_stats['jours_travail'] if mes_stats else 0
+            a_venir = mes_stats['a_venir'] if mes_stats else 0
+            heures = total_surv * 1.5
             
-            # Mes surveillances
+            stat_cols = st.columns(4)
+            with stat_cols[0]:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #6366F1, #818CF8); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: white;">{total_surv}</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);">👁️ Total Surveillances</div>
+                </div>""", unsafe_allow_html=True)
+            with stat_cols[1]:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #10B981, #34D399); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: white;">{a_venir}</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);">📅 À Venir</div>
+                </div>""", unsafe_allow_html=True)
+            with stat_cols[2]:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #F59E0B, #FBBF24); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: white;">{jours}</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);">📆 Jours de Travail</div>
+                </div>""", unsafe_allow_html=True)
+            with stat_cols[3]:
+                st.markdown(f"""
+                <div style="background: linear-gradient(135deg, #EC4899, #F472B6); border-radius: 12px; padding: 1rem; text-align: center;">
+                    <div style="font-size: 1.8rem; font-weight: 700; color: white;">{heures:.0f}h</div>
+                    <div style="font-size: 0.8rem; color: rgba(255,255,255,0.8);">⏰ Heures Totales</div>
+                </div>""", unsafe_allow_html=True)
+            
+            st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
             st.markdown("### 📅 Mes Surveillances à Venir")
             
             mes_surv = q("""
-                SELECT e.date_examen as Date, m.code as Module, 
-                       l.nom as Salle, ch.heure_debut as Début, ch.heure_fin as Fin,
-                       e.nb_etudiants_prevus as Étudiants
+                SELECT e.date_examen as date, m.code as module_code, m.nom as module_nom,
+                       l.nom as salle, ch.heure_debut, ch.heure_fin,
+                       f.nom as formation, COALESCE(e.nb_etudiants_prevus, 0) as nb_etudiants
                 FROM surveillances sv
                 JOIN examens e ON sv.examen_id = e.id
                 JOIN modules m ON e.module_id = m.id
+                JOIN formations f ON m.formation_id = f.id
                 JOIN lieu_examen l ON e.salle_id = l.id
                 JOIN creneaux_horaires ch ON e.creneau_id = ch.id
                 WHERE sv.professeur_id = %s AND e.date_examen >= CURDATE()
@@ -811,9 +892,45 @@ if "Dashboard" in page:
             """, (prof_id,))
             
             if mes_surv:
-                import pandas as pd
-                df = pd.DataFrame(mes_surv)
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                # Formater les heures
+                def fmt_t(t):
+                    if t is None: return ""
+                    if hasattr(t, 'strftime'): return t.strftime('%H:%M')
+                    return str(t)[:5]
+                
+                # Tableau stylisé
+                table_html = """<table class="exam-table">
+                <tr><th>📅 Date</th><th>⏰ Horaire</th><th>📚 Module</th><th>📖 Matière</th><th>🏛️ Salle</th><th>👥 Étudiants</th></tr>"""
+                
+                for sv in mes_surv:
+                    date_str = str(sv.get('date', ''))[:10]
+                    horaire = f"{fmt_t(sv.get('heure_debut'))} - {fmt_t(sv.get('heure_fin'))}"
+                    table_html += f"""<tr>
+                        <td><span class="date-badge">{date_str}</span></td>
+                        <td><span class="time-badge">{horaire}</span></td>
+                        <td><strong>{sv.get('module_code', '')}</strong></td>
+                        <td>{sv.get('module_nom', '')[:30]}{'...' if len(str(sv.get('module_nom', ''))) > 30 else ''}</td>
+                        <td><span class="salle-badge">{sv.get('salle', '')}</span></td>
+                        <td style="text-align: center;">{sv.get('nb_etudiants', 0)}</td>
+                    </tr>"""
+                
+                table_html += "</table>"
+                st.markdown(table_html, unsafe_allow_html=True)
+                
+                # Boutons téléchargement
+                st.markdown("---")
+                col1, col2 = st.columns(2)
+                with col1:
+                    if st.button("📄 Générer PDF", type="primary", use_container_width=True, key="gen_pdf_prof"):
+                        try:
+                            from services.pdf_generator import generate_professor_schedule_pdf
+                            survs_for_pdf = [{'date': s['date'], 'heure_debut': fmt_t(s['heure_debut']), 'heure_fin': fmt_t(s['heure_fin']),
+                                             'module_code': s['module_code'], 'module_nom': s['module_nom'], 'salle': s['salle'],
+                                             'formation': s['formation'], 'groupe': 'G01', 'dept': user.get('dept_nom', ''), 'role': 'Surveillant'} for s in mes_surv]
+                            pdf = generate_professor_schedule_pdf(user.get('nom', ''), user.get('prenom', ''), user.get('dept_nom', ''), survs_for_pdf)
+                            st.download_button("⬇️ Télécharger PDF", pdf, f"surveillances_{user.get('nom', '')}.pdf", "application/pdf", use_container_width=True)
+                        except Exception as e:
+                            st.error(f"Erreur: {e}")
             else:
                 st.info("📭 Aucune surveillance programmée pour le moment")
         else:
