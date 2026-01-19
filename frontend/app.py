@@ -1036,97 +1036,101 @@ if "Dashboard" in page:
             </div>
             """, unsafe_allow_html=True)
     
-    # Quick Actions & Recent Exams
-    col1, col2 = st.columns([1, 2])
+    # ════════════════════════════════════════════════════════════════════════════
+    # SECTIONS ADMIN/VICE-DOYEN UNIQUEMENT (Quick Actions, Derniers Examens, Stats)
+    # ════════════════════════════════════════════════════════════════════════════
+    if role in ['ADMIN', 'VICE_DOYEN', 'CHEF_DEPT']:
+        # Quick Actions & Recent Exams
+        col1, col2 = st.columns([1, 2])
     
-    with col1:
-        st.markdown('<div class="section-title"><h2>⚡ Accès Rapide</h2></div>', unsafe_allow_html=True)
+        with col1:
+            st.markdown('<div class="section-title"><h2>⚡ Accès Rapide</h2></div>', unsafe_allow_html=True)
+            
+            # Functional Quick Access buttons
+            qa1, qa2, qa3 = st.columns(3)
+            with qa1:
+                if st.button("📅\nGénérer", use_container_width=True, key="qa_gen"):
+                    st.info("➡️ Allez dans 🚀 Génération dans le menu")
+            with qa2:
+                if st.button("📊\nPlannings", use_container_width=True, key="qa_plan"):
+                    st.info("➡️ Allez dans 📊 Plannings dans le menu")
+            with qa3:
+                if st.button("📄\nExport", use_container_width=True, key="qa_exp"):
+                    st.info("➡️ Allez dans 📄 Export dans le menu")
+            
+            # Session active
+            session = q("SELECT nom, date_debut, date_fin FROM sessions_examen ORDER BY date_debut DESC LIMIT 1", fetch='one')
+            if session:
+                st.markdown(f"""
+                <div class="form-card">
+                    <p style="color: #64748B; font-size: 0.8rem; margin: 0;">SESSION ACTIVE</p>
+                    <p style="color: #F8FAFC; font-weight: 600; margin: 0.5rem 0;">{session['nom']}</p>
+                    <p style="color: #10B981; font-size: 0.85rem; margin: 0;">
+                        📅 {session['date_debut']} → {session['date_fin']}
+                    </p>
+                </div>
+                """, unsafe_allow_html=True)
         
-        # Functional Quick Access buttons
-        qa1, qa2, qa3 = st.columns(3)
-        with qa1:
-            if st.button("📅\nGénérer", use_container_width=True, key="qa_gen"):
-                st.info("➡️ Allez dans 🚀 Génération dans le menu")
-        with qa2:
-            if st.button("📊\nPlannings", use_container_width=True, key="qa_plan"):
-                st.info("➡️ Allez dans 📊 Plannings dans le menu")
-        with qa3:
-            if st.button("📄\nExport", use_container_width=True, key="qa_exp"):
-                st.info("➡️ Allez dans 📄 Export dans le menu")
+        with col2:
+            st.markdown('<div class="section-title"><h2>📅 Derniers Examens</h2><span class="badge">Récent</span></div>', unsafe_allow_html=True)
+            
+            recent = q("""
+                SELECT e.date_examen as Date,
+                       CONCAT(TIME_FORMAT(ch.heure_debut,'%H:%i'),'-',TIME_FORMAT(ch.heure_fin,'%H:%i')) as Horaire,
+                       m.nom as Module, f.nom as Formation, l.nom as Salle
+                FROM examens e
+                JOIN modules m ON e.module_id = m.id
+                JOIN formations f ON m.formation_id = f.id
+                JOIN lieu_examen l ON e.salle_id = l.id
+                JOIN creneaux_horaires ch ON e.creneau_id = ch.id
+                ORDER BY e.date_examen DESC, ch.ordre LIMIT 8
+            """)
+            
+            if recent:
+                st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
+            else:
+                st.info("🔔 Aucun examen planifié. Allez dans **Génération** pour créer le planning.")
         
-        # Session active
-        session = q("SELECT nom, date_debut, date_fin FROM sessions_examen ORDER BY date_debut DESC LIMIT 1", fetch='one')
-        if session:
-            st.markdown(f"""
-            <div class="form-card">
-                <p style="color: #64748B; font-size: 0.8rem; margin: 0;">SESSION ACTIVE</p>
-                <p style="color: #F8FAFC; font-weight: 600; margin: 0.5rem 0;">{session['nom']}</p>
-                <p style="color: #10B981; font-size: 0.85rem; margin: 0;">
-                    📅 {session['date_debut']} → {session['date_fin']}
-                </p>
-            </div>
-            """, unsafe_allow_html=True)
-    
-    with col2:
-        st.markdown('<div class="section-title"><h2>📅 Derniers Examens</h2><span class="badge">Récent</span></div>', unsafe_allow_html=True)
+        # === STATISTIQUES DES SURVEILLANCES (ADMIN ONLY) ===
+        st.markdown('---')
+        st.markdown('<div class="section-title"><h2>👥 Statistiques des Surveillances</h2></div>', unsafe_allow_html=True)
         
-        recent = q("""
-            SELECT e.date_examen as Date,
-                   CONCAT(TIME_FORMAT(ch.heure_debut,'%H:%i'),'-',TIME_FORMAT(ch.heure_fin,'%H:%i')) as Horaire,
-                   m.nom as Module, f.nom as Formation, l.nom as Salle
-            FROM examens e
-            JOIN modules m ON e.module_id = m.id
-            JOIN formations f ON m.formation_id = f.id
-            JOIN lieu_examen l ON e.salle_id = l.id
-            JOIN creneaux_horaires ch ON e.creneau_id = ch.id
-            ORDER BY e.date_examen DESC, ch.ordre LIMIT 8
+        surv_stats = q("""
+            SELECT 
+                COUNT(DISTINCT e.id) as nb_examens,
+                COUNT(s.id) as total_surveillants,
+                ROUND(COUNT(s.id) / NULLIF(COUNT(DISTINCT e.id), 0), 1) as moyenne
+            FROM examens e 
+            LEFT JOIN surveillances s ON s.examen_id = e.id
+        """, fetch='one')
+        
+        surv_detail = q("""
+            SELECT 
+                CASE WHEN l.capacite >= 100 THEN 'Amphithéâtre (≥100)' ELSE 'Petite salle (<100)' END as type_salle,
+                COUNT(DISTINCT e.id) as nb_examens,
+                COUNT(s.id) as total_surveillants,
+                ROUND(COUNT(s.id) / NULLIF(COUNT(DISTINCT e.id), 0), 1) as moyenne
+            FROM examens e 
+            LEFT JOIN surveillances s ON s.examen_id = e.id
+            LEFT JOIN lieu_examen l ON e.salle_id = l.id
+            GROUP BY type_salle
         """)
         
-        if recent:
-            st.dataframe(pd.DataFrame(recent), use_container_width=True, hide_index=True)
-        else:
-            st.info("🔔 Aucun examen planifié. Allez dans **Génération** pour créer le planning.")
-    
-    # === STATISTIQUES DES SURVEILLANCES (PERSISTENT) ===
-    st.markdown('---')
-    st.markdown('<div class="section-title"><h2>👥 Statistiques des Surveillances</h2></div>', unsafe_allow_html=True)
-    
-    surv_stats = q("""
-        SELECT 
-            COUNT(DISTINCT e.id) as nb_examens,
-            COUNT(s.id) as total_surveillants,
-            ROUND(COUNT(s.id) / NULLIF(COUNT(DISTINCT e.id), 0), 1) as moyenne
-        FROM examens e 
-        LEFT JOIN surveillances s ON s.examen_id = e.id
-    """, fetch='one')
-    
-    surv_detail = q("""
-        SELECT 
-            CASE WHEN l.capacite >= 100 THEN 'Amphithéâtre (≥100)' ELSE 'Petite salle (<100)' END as type_salle,
-            COUNT(DISTINCT e.id) as nb_examens,
-            COUNT(s.id) as total_surveillants,
-            ROUND(COUNT(s.id) / NULLIF(COUNT(DISTINCT e.id), 0), 1) as moyenne
-        FROM examens e 
-        LEFT JOIN surveillances s ON s.examen_id = e.id
-        LEFT JOIN lieu_examen l ON e.salle_id = l.id
-        GROUP BY type_salle
-    """)
-    
-    if surv_stats and surv_stats.get('nb_examens', 0) > 0:
-        sc1, sc2, sc3 = st.columns(3)
-        sc1.metric("📊 Total Examens", surv_stats.get('nb_examens', 0))
-        sc2.metric("👥 Total Surveillances", surv_stats.get('total_surveillants', 0))
-        sc3.metric("📈 Moyenne/Examen", surv_stats.get('moyenne', 0))
-        
-        if surv_detail:
-            st.write("**Détail par type de salle:**")
-            for d in surv_detail:
-                if d.get('type_salle'):
-                    st.write(f"- **{d['type_salle']}**: {d['total_surveillants']} surveillants pour {d['nb_examens']} examens ({d['moyenne']} par examen)")
+        if surv_stats and surv_stats.get('nb_examens', 0) > 0:
+            sc1, sc2, sc3 = st.columns(3)
+            sc1.metric("📊 Total Examens", surv_stats.get('nb_examens', 0))
+            sc2.metric("👥 Total Surveillances", surv_stats.get('total_surveillants', 0))
+            sc3.metric("📈 Moyenne/Examen", surv_stats.get('moyenne', 0))
             
-            st.caption("💡 **Calcul de la moyenne:** Total surveillants ÷ Nombre d'examens dans cette catégorie de salle")
-    else:
-        st.info("📊 Aucune surveillance assignée. Générez d'abord les plannings.")
+            if surv_detail:
+                st.write("**Détail par type de salle:**")
+                for d in surv_detail:
+                    if d.get('type_salle'):
+                        st.write(f"- **{d['type_salle']}**: {d['total_surveillants']} surveillants pour {d['nb_examens']} examens ({d['moyenne']} par examen)")
+                
+                st.caption("💡 **Calcul de la moyenne:** Total surveillants ÷ Nombre d'examens dans cette catégorie de salle")
+        else:
+            st.info("📊 Aucune surveillance assignée. Générez d'abord les plannings.")
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
 # ║  PAGE: CONFIGURATION - AVEC PARAMÈTRES D'OPTIMISATION                       ║
