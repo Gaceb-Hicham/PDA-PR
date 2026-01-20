@@ -22,9 +22,8 @@ fake = Faker('fr_FR')
 Faker.seed(42)
 random.seed(42)
 
-# ============================================================================
-# CONFIGURATION DE LA GÉNÉRATION
-# ============================================================================
+# Configuration
+
 
 GENERATION_CONFIG = {
     'nb_departements': 7,
@@ -158,9 +157,8 @@ MODULES_TYPES = {
 BATIMENTS = ['Bloc A', 'Bloc B', 'Bloc C', 'Bloc D', 'Bloc E', 'Nouveau Bloc']
 NIVEAUX = ['L1', 'L2', 'L3', 'M1', 'M2']
 
-# ============================================================================
-# FONCTIONS DE GÉNÉRATION
-# ============================================================================
+# Fonctions de génération
+
 
 def get_connection():
     """Établit une connexion à la base de données"""
@@ -545,9 +543,8 @@ def update_chef_departements(cursor, dept_ids: List[int], profs_by_dept: Dict):
             )
 
 
-# ============================================================================
-# MAIN
-# ============================================================================
+# Main
+
 
 def main():
     """Fonction principale de génération des données"""

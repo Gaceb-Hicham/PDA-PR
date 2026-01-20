@@ -16,9 +16,7 @@ from config import DB_CONFIG
 logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
-# ============================================================================
-# CONNECTION POOL - UNE SEULE INSTANCE GLOBALE
-# ============================================================================
+# Connection pool
 
 _connection_pool = None
 
@@ -169,9 +167,8 @@ class get_cursor:
         return False
 
 
-# ============================================================================
-# Fonctions utilitaires pour les requêtes courantes
-# ============================================================================
+# Fonctions utilitaires
+
 
 def get_all_departements() -> List[Dict]:
     """Récupère tous les départements"""
@@ -240,9 +237,8 @@ def get_conflits_actifs(session_id: int = None) -> List[Dict]:
     return execute_query(query + " ORDER BY c.severite, c.created_at DESC LIMIT 100")
 
 
-# ============================================================================
 # Test de connexion
-# ============================================================================
+
 
 def test_connection() -> bool:
     """Teste la connexion à la base de données"""
