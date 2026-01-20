@@ -6,17 +6,40 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# Configuration de la base de données MySQL
-DB_CONFIG = {
-    'host': os.getenv('DB_HOST', 'localhost'),
-    'port': int(os.getenv('DB_PORT', 3306)),
-    'user': os.getenv('DB_USER', 'root'),
-    'password': os.getenv('DB_PASSWORD', ''),
-    'database': os.getenv('DB_NAME', 'pda_examens'),
-    'charset': 'utf8mb4',
-    'collation': 'utf8mb4_unicode_ci',
-    'autocommit': True
-}
+# Détection de l'environnement Streamlit Cloud
+def get_db_config():
+    """Retourne la config DB selon l'environnement (Streamlit Cloud ou local)"""
+    try:
+        import streamlit as st
+        if hasattr(st, 'secrets') and 'database' in st.secrets:
+            # Production: TiDB Cloud via Streamlit Secrets
+            return {
+                'host': st.secrets.database.host,
+                'port': int(st.secrets.database.port),
+                'user': st.secrets.database.user,
+                'password': st.secrets.database.password,
+                'database': st.secrets.database.database,
+                'charset': 'utf8mb4',
+                'collation': 'utf8mb4_unicode_ci',
+                'autocommit': True,
+                'ssl_disabled': False
+            }
+    except:
+        pass
+    
+    # Local: MySQL via .env
+    return {
+        'host': os.getenv('DB_HOST', 'localhost'),
+        'port': int(os.getenv('DB_PORT', 3306)),
+        'user': os.getenv('DB_USER', 'root'),
+        'password': os.getenv('DB_PASSWORD', ''),
+        'database': os.getenv('DB_NAME', 'pda_examens'),
+        'charset': 'utf8mb4',
+        'collation': 'utf8mb4_unicode_ci',
+        'autocommit': True
+    }
+
+DB_CONFIG = get_db_config()
 
 # Configuration de l'application
 APP_CONFIG = {
