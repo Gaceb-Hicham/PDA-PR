@@ -1,9 +1,6 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║  ExamPro - Générateur de PDF Professionnel v2                                ║
-║  Design Universitaire - Université de Boumerdes                              ║
-║  Mode PAYSAGE + Largeurs de colonnes adaptées                                ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+ExamPro - Générateur de PDF
+Université de Boumerdès
 """
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4, landscape

@@ -1,8 +1,6 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║  SERVICE D'AUTHENTIFICATION                                                   ║
-║  Gestion des connexions, sessions et permissions                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+Service d'authentification
+Gestion des connexions, sessions et permissions
 """
 
 import bcrypt

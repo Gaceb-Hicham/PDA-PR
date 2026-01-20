@@ -1,9 +1,6 @@
 """
-╔══════════════════════════════════════════════════════════════════════════════╗
-║  EXAM SCHEDULER PRO - Plateforme de Gestion des Examens                     ║
-║  Design Premium avec Glassmorphism & Animations                             ║
-║  Université M'Hamed Bougara - Faculté des Sciences                          ║
-╚══════════════════════════════════════════════════════════════════════════════╝
+ExamPro - Plateforme de Gestion des Examens
+Université M'Hamed Bougara - Boumerdès
 """
 import streamlit as st
 import pandas as pd

@@ -22,9 +22,8 @@ from database import execute_query, get_cursor
 from config import OPTIMIZATION_CONFIG
 
 
-# ============================================================================
-# DATA CLASSES
-# ============================================================================
+# Data Classes
+
 
 @dataclass
 class ExamSlot:
@@ -78,9 +77,8 @@ class Conflict:
     severite: str
 
 
-# ============================================================================
-# SCHEDULER CLASS - VERSION 6.0 AVEC PARAMÈTRES AVANCÉS
-# ============================================================================
+# Scheduler Class
+
 
 class ExamScheduler:
     """
