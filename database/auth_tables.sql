@@ -1,12 +1,6 @@
--- ════════════════════════════════════════════════════════════════════════════════
--- TABLE D'AUTHENTIFICATION ET CONTRÔLE D'ACCÈS
--- Système de gestion des utilisateurs avec rôles hiérarchiques
--- ════════════════════════════════════════════════════════════════════════════════
+-- Table d'authentification et contrôle d'accès
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  TABLE PRINCIPALE DES UTILISATEURS                                            ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
+-- Table principale des utilisateurs
 CREATE TABLE IF NOT EXISTS utilisateurs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     
@@ -48,10 +42,7 @@ CREATE TABLE IF NOT EXISTS utilisateurs (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  TABLE DES SESSIONS DE CONNEXION                                              ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
+-- Table des sessions de connexion
 CREATE TABLE IF NOT EXISTS sessions_utilisateur (
     id INT AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id INT NOT NULL,
@@ -67,10 +58,7 @@ CREATE TABLE IF NOT EXISTS sessions_utilisateur (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  TABLE DES LOGS D'ACTIVITÉ                                                    ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
+-- Table des logs d'activité
 CREATE TABLE IF NOT EXISTS logs_connexion (
     id INT AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id INT,
@@ -86,10 +74,7 @@ CREATE TABLE IF NOT EXISTS logs_connexion (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  DÉFINITION DES PERMISSIONS PAR RÔLE                                          ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
-
+-- Définition des permissions par rôle
 CREATE TABLE IF NOT EXISTS permissions_role (
     id INT AUTO_INCREMENT PRIMARY KEY,
     role ENUM('ETUDIANT', 'PROFESSEUR', 'CHEF_DEPT', 'ADMIN', 'VICE_DOYEN') NOT NULL,
@@ -138,9 +123,3 @@ INSERT INTO permissions_role (role, page_key, peut_voir, peut_modifier) VALUES
 ('VICE_DOYEN', 'kpis_vicedoyen', TRUE, TRUE),
 ('VICE_DOYEN', 'benchmarks', TRUE, TRUE)
 ON DUPLICATE KEY UPDATE peut_voir = VALUES(peut_voir), peut_modifier = VALUES(peut_modifier);
-
-
--- ════════════════════════════════════════════════════════════════════════════════
--- FIN DU SCRIPT
--- Exécuter avec: mysql -u root -p pda_examens < auth_tables.sql
--- ════════════════════════════════════════════════════════════════════════════════

@@ -1,11 +1,6 @@
--- ════════════════════════════════════════════════════════════════════════════════
 -- PROCÉDURES STOCKÉES ET INDEX - Optimisation PDA Examens
 -- Conformément aux exigences: "Optimisation: Procédures PL/pgSQL + index partiels"
--- ════════════════════════════════════════════════════════════════════════════════
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  INDEX PARTIELS POUR PERFORMANCE                                              ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
 
 -- Index sur les examens par session et date (requêtes fréquentes)
 CREATE INDEX IF NOT EXISTS idx_examens_session_date 
@@ -40,15 +35,9 @@ CREATE INDEX IF NOT EXISTS idx_conflits_non_resolus
 ON conflits(resolu, type_conflit);
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  PROCÉDURES STOCKÉES                                                          ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
 
 DELIMITER //
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Détection des conflits étudiants (plus d'un examen par jour)
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_detect_student_conflicts//
 CREATE PROCEDURE sp_detect_student_conflicts(IN p_session_id INT)
 BEGIN
@@ -73,9 +62,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Statistiques globales optimisées
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_get_global_stats//
 CREATE PROCEDURE sp_get_global_stats()
 BEGIN
@@ -90,9 +76,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: KPIs par département
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_get_department_kpis//
 CREATE PROCEDURE sp_get_department_kpis(IN p_session_id INT)
 BEGIN
@@ -120,9 +103,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Taux d'utilisation des salles
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_get_room_utilization//
 CREATE PROCEDURE sp_get_room_utilization(IN p_session_id INT)
 BEGIN
@@ -154,9 +134,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Charge de travail des professeurs
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_get_professor_workload//
 CREATE PROCEDURE sp_get_professor_workload(IN p_session_id INT)
 BEGIN
@@ -186,9 +163,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Validation du planning (pour chef de département)
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_validate_department_schedule//
 CREATE PROCEDURE sp_validate_department_schedule(
     IN p_session_id INT,
@@ -211,9 +185,6 @@ BEGIN
 END//
 
 
--- ────────────────────────────────────────────────────────────────────────────────
--- Procédure: Benchmark de performance
--- ────────────────────────────────────────────────────────────────────────────────
 DROP PROCEDURE IF EXISTS sp_run_benchmark//
 CREATE PROCEDURE sp_run_benchmark()
 BEGIN
@@ -243,9 +214,6 @@ END//
 DELIMITER ;
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  COLONNES ADDITIONNELLES POUR VALIDATION                                      ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
 
 -- Ajouter colonnes de validation à la table examens (si elles n'existent pas)
 ALTER TABLE examens 
@@ -258,9 +226,6 @@ ADD COLUMN IF NOT EXISTS validation_comments TEXT DEFAULT NULL;
 CREATE INDEX IF NOT EXISTS idx_examens_statut ON examens(statut);
 
 
--- ╔══════════════════════════════════════════════════════════════════════════════╗
--- ║  VUES OPTIMISÉES                                                              ║
--- ╚══════════════════════════════════════════════════════════════════════════════╝
 
 -- Vue: Résumé des examens par département
 CREATE OR REPLACE VIEW v_exams_by_department AS
@@ -297,6 +262,5 @@ LEFT JOIN examens e ON s.examen_id = e.id
 GROUP BY p.id;
 
 
--- ════════════════════════════════════════════════════════════════════════════════
 -- FIN DU SCRIPT - Exécuter avec: mysql -u root -p pda_examens < stored_procedures.sql
--- ════════════════════════════════════════════════════════════════════════════════
+

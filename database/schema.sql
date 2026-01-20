@@ -1,18 +1,18 @@
--- ============================================================================
+
 -- PLATEFORME D'OPTIMISATION DES EMPLOIS DU TEMPS D'EXAMENS UNIVERSITAIRES
 -- Base de données: MySQL
 -- Université M'Hamed Bougara - Faculté des Sciences
--- ============================================================================
+
 
 -- Création de la base de données
 DROP DATABASE IF EXISTS pda_examens;
 CREATE DATABASE pda_examens CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
 USE pda_examens;
 
--- ============================================================================
+
 -- TABLE: departements
 -- Description: Les 7 départements de la faculté
--- ============================================================================
+
 CREATE TABLE departements (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nom VARCHAR(100) NOT NULL UNIQUE,
@@ -22,10 +22,10 @@ CREATE TABLE departements (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: formations
 -- Description: Les programmes de formation (200+ formations, 6-9 modules chacune)
--- ============================================================================
+
 CREATE TABLE formations (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nom VARCHAR(150) NOT NULL,
@@ -40,10 +40,10 @@ CREATE TABLE formations (
     INDEX idx_niveau (niveau)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: etudiants
 -- Description: Les étudiants (13,000+ étudiants)
--- ============================================================================
+
 CREATE TABLE etudiants (
     id INT AUTO_INCREMENT PRIMARY KEY,
     matricule VARCHAR(20) NOT NULL UNIQUE,
@@ -61,10 +61,10 @@ CREATE TABLE etudiants (
     INDEX idx_nom_prenom (nom, prenom)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: modules
 -- Description: Les modules de cours (6-9 par formation)
--- ============================================================================
+
 CREATE TABLE modules (
     id INT AUTO_INCREMENT PRIMARY KEY,
     code VARCHAR(20) NOT NULL UNIQUE,
@@ -83,10 +83,10 @@ CREATE TABLE modules (
     INDEX idx_semestre (semestre)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: lieu_examen
 -- Description: Salles d'examen et amphithéâtres
--- ============================================================================
+
 CREATE TABLE lieu_examen (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nom VARCHAR(50) NOT NULL UNIQUE,
@@ -104,10 +104,10 @@ CREATE TABLE lieu_examen (
     INDEX idx_batiment (batiment)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: professeurs
 -- Description: Corps enseignant
--- ============================================================================
+
 CREATE TABLE professeurs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     matricule VARCHAR(20) NOT NULL UNIQUE,
@@ -129,10 +129,10 @@ CREATE TABLE professeurs (
 ALTER TABLE departements 
 ADD FOREIGN KEY (chef_dept_id) REFERENCES professeurs(id) ON DELETE SET NULL;
 
--- ============================================================================
+
 -- TABLE: inscriptions
 -- Description: Inscriptions des étudiants aux modules (~130,000 inscriptions)
--- ============================================================================
+
 CREATE TABLE inscriptions (
     id INT AUTO_INCREMENT PRIMARY KEY,
     etudiant_id INT NOT NULL,
@@ -150,10 +150,10 @@ CREATE TABLE inscriptions (
     INDEX idx_annee (annee_universitaire)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: sessions_examen
 -- Description: Sessions/périodes d'examens
--- ============================================================================
+
 CREATE TABLE sessions_examen (
     id INT AUTO_INCREMENT PRIMARY KEY,
     nom VARCHAR(100) NOT NULL,
@@ -169,10 +169,10 @@ CREATE TABLE sessions_examen (
     INDEX idx_statut (statut)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: creneaux_horaires
 -- Description: Créneaux horaires disponibles pour les examens
--- ============================================================================
+
 CREATE TABLE creneaux_horaires (
     id INT AUTO_INCREMENT PRIMARY KEY,
     libelle VARCHAR(50) NOT NULL,
@@ -192,10 +192,10 @@ INSERT INTO creneaux_horaires (libelle, heure_debut, heure_fin, ordre) VALUES
 ('Après-midi 1', '13:45:00', '15:15:00', 4),
 ('Après-midi 2', '15:30:00', '17:00:00', 5);
 
--- ============================================================================
+
 -- TABLE: examens
 -- Description: Planification des examens
--- ============================================================================
+
 CREATE TABLE examens (
     id INT AUTO_INCREMENT PRIMARY KEY,
     module_id INT NOT NULL,
@@ -220,10 +220,10 @@ CREATE TABLE examens (
     INDEX idx_statut (statut)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: surveillances
 -- Description: Affectation des surveillants aux examens
--- ============================================================================
+
 CREATE TABLE surveillances (
     id INT AUTO_INCREMENT PRIMARY KEY,
     examen_id INT NOT NULL,
@@ -240,10 +240,10 @@ CREATE TABLE surveillances (
     INDEX idx_professeur (professeur_id)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: utilisateurs
 -- Description: Gestion des utilisateurs du système
--- ============================================================================
+
 CREATE TABLE utilisateurs (
     id INT AUTO_INCREMENT PRIMARY KEY,
     username VARCHAR(50) NOT NULL UNIQUE,
@@ -264,10 +264,10 @@ CREATE TABLE utilisateurs (
     INDEX idx_actif (actif)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: conflits
 -- Description: Gestion des conflits détectés
--- ============================================================================
+
 CREATE TABLE conflits (
     id INT AUTO_INCREMENT PRIMARY KEY,
     type_conflit ENUM('ETUDIANT_DOUBLE', 'PROF_SURCHARGE', 'SALLE_PLEINE', 'HORAIRE_OVERLAP') NOT NULL,
@@ -286,10 +286,10 @@ CREATE TABLE conflits (
     INDEX idx_severite (severite)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- TABLE: logs_systeme
 -- Description: Journalisation des actions système
--- ============================================================================
+
 CREATE TABLE logs_systeme (
     id INT AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id INT NULL,
@@ -305,9 +305,9 @@ CREATE TABLE logs_systeme (
     INDEX idx_utilisateur (utilisateur_id)
 ) ENGINE=InnoDB;
 
--- ============================================================================
+
 -- VUES UTILES
--- ============================================================================
+
 
 -- Vue: Statistiques par département
 CREATE OR REPLACE VIEW v_stats_departement AS
@@ -367,9 +367,9 @@ LEFT JOIN surveillances s ON s.professeur_id = p.id
 GROUP BY p.id, p.nom, p.prenom, d.nom
 ORDER BY nb_surveillances DESC;
 
--- ============================================================================
+
 -- PROCÉDURES STOCKÉES
--- ============================================================================
+
 
 DELIMITER //
 
@@ -454,9 +454,9 @@ END //
 
 DELIMITER ;
 
--- ============================================================================
+
 -- INDEX POUR OPTIMISATION
--- ============================================================================
+
 
 -- Index pour les examens (statut inclus pour filtrage rapide)
 CREATE INDEX idx_examens_planifies ON examens(statut, date_examen, creneau_id);
@@ -467,8 +467,8 @@ CREATE INDEX idx_conflits_actifs ON conflits(resolu, type_conflit, severite);
 -- Index pour les utilisateurs (actif inclus pour filtrage rapide)
 CREATE INDEX idx_utilisateurs_actifs ON utilisateurs(actif, role, dept_id);
 
--- ============================================================================
+
 -- FIN DU SCRIPT
--- ============================================================================
+
 
 SELECT 'Base de données pda_examens créée avec succès!' AS message;
