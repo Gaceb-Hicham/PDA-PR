@@ -1,46 +1,5 @@
--- Table d'authentification et contrôle d'accès
-
--- Table principale des utilisateurs
-CREATE TABLE IF NOT EXISTS utilisateurs (
-    id INT AUTO_INCREMENT PRIMARY KEY,
-    
-    -- Identifiants de connexion
-    email VARCHAR(255) UNIQUE,
-    password_hash VARCHAR(255),
-    
-    -- Rôle et niveau d'accès
-    role ENUM('ETUDIANT', 'PROFESSEUR', 'CHEF_DEPT', 'ADMIN', 'VICE_DOYEN') NOT NULL,
-    niveau_acces INT DEFAULT 1,
-    
-    -- Liens vers les entités (selon le type d'utilisateur)
-    etudiant_id INT DEFAULT NULL,
-    professeur_id INT DEFAULT NULL,
-    dept_id INT DEFAULT NULL,
-    
-    -- Informations personnelles
-    nom VARCHAR(100) NOT NULL,
-    prenom VARCHAR(100),
-    
-    -- État du compte
-    actif BOOLEAN DEFAULT TRUE,
-    premiere_connexion BOOLEAN DEFAULT TRUE,
-    
-    -- Timestamps
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    last_login DATETIME DEFAULT NULL,
-    
-    -- Contraintes
-    FOREIGN KEY (etudiant_id) REFERENCES etudiants(id) ON DELETE SET NULL,
-    FOREIGN KEY (professeur_id) REFERENCES professeurs(id) ON DELETE SET NULL,
-    FOREIGN KEY (dept_id) REFERENCES departements(id) ON DELETE SET NULL,
-    
-    -- Index pour recherche rapide
-    INDEX idx_utilisateurs_role (role),
-    INDEX idx_utilisateurs_email (email),
-    INDEX idx_utilisateurs_etudiant (etudiant_id),
-    INDEX idx_utilisateurs_professeur (professeur_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
+-- Tables d'authentification supplémentaires
+-- Note: La table 'utilisateurs' est définie dans schema.sql
 
 -- Table des sessions de connexion
 CREATE TABLE IF NOT EXISTS sessions_utilisateur (
@@ -58,7 +17,7 @@ CREATE TABLE IF NOT EXISTS sessions_utilisateur (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
--- Table des logs d'activité
+-- Table des logs de connexion
 CREATE TABLE IF NOT EXISTS logs_connexion (
     id INT AUTO_INCREMENT PRIMARY KEY,
     utilisateur_id INT,
@@ -77,7 +36,7 @@ CREATE TABLE IF NOT EXISTS logs_connexion (
 -- Définition des permissions par rôle
 CREATE TABLE IF NOT EXISTS permissions_role (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    role ENUM('ETUDIANT', 'PROFESSEUR', 'CHEF_DEPT', 'ADMIN', 'VICE_DOYEN') NOT NULL,
+    role ENUM('ETUDIANT', 'PROFESSEUR', 'CHEF_DEPT', 'ADMIN', 'VICE_DOYEN', 'DOYEN') NOT NULL,
     page_key VARCHAR(50) NOT NULL,
     peut_voir BOOLEAN DEFAULT FALSE,
     peut_modifier BOOLEAN DEFAULT FALSE,
@@ -89,7 +48,7 @@ CREATE TABLE IF NOT EXISTS permissions_role (
 INSERT INTO permissions_role (role, page_key, peut_voir, peut_modifier) VALUES
 -- Étudiant: accès limité
 ('ETUDIANT', 'dashboard', TRUE, FALSE),
-('ETUDIANT', 'plannings', TRUE, FALSE),
+('ETUDIANT', 'export', TRUE, FALSE),
 
 -- Professeur: accès lecture + export
 ('PROFESSEUR', 'dashboard', TRUE, FALSE),
@@ -102,7 +61,7 @@ INSERT INTO permissions_role (role, page_key, peut_voir, peut_modifier) VALUES
 ('CHEF_DEPT', 'export', TRUE, FALSE),
 ('CHEF_DEPT', 'validation_dept', TRUE, TRUE),
 
--- Admin: accès complet sauf KPIs Vice-doyen
+-- Admin: accès complet
 ('ADMIN', 'dashboard', TRUE, TRUE),
 ('ADMIN', 'configuration', TRUE, TRUE),
 ('ADMIN', 'donnees', TRUE, TRUE),
@@ -121,5 +80,16 @@ INSERT INTO permissions_role (role, page_key, peut_voir, peut_modifier) VALUES
 ('VICE_DOYEN', 'export', TRUE, TRUE),
 ('VICE_DOYEN', 'validation_dept', TRUE, TRUE),
 ('VICE_DOYEN', 'kpis_vicedoyen', TRUE, TRUE),
-('VICE_DOYEN', 'benchmarks', TRUE, TRUE)
+('VICE_DOYEN', 'benchmarks', TRUE, TRUE),
+
+-- Doyen: accès total
+('DOYEN', 'dashboard', TRUE, TRUE),
+('DOYEN', 'configuration', TRUE, TRUE),
+('DOYEN', 'donnees', TRUE, TRUE),
+('DOYEN', 'generation', TRUE, TRUE),
+('DOYEN', 'plannings', TRUE, TRUE),
+('DOYEN', 'export', TRUE, TRUE),
+('DOYEN', 'validation_dept', TRUE, TRUE),
+('DOYEN', 'kpis_vicedoyen', TRUE, TRUE),
+('DOYEN', 'benchmarks', TRUE, TRUE)
 ON DUPLICATE KEY UPDATE peut_voir = VALUES(peut_voir), peut_modifier = VALUES(peut_modifier);

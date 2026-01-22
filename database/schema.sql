@@ -205,6 +205,7 @@ CREATE TABLE examens (
     creneau_id INT NOT NULL,
     duree_minutes INT NOT NULL DEFAULT 90,
     nb_etudiants_prevus INT DEFAULT 0,
+    groupe VARCHAR(20) DEFAULT NULL,
     statut ENUM('PLANIFIE', 'EN_COURS', 'TERMINE', 'ANNULE') DEFAULT 'PLANIFIE',
     notes TEXT,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -217,7 +218,8 @@ CREATE TABLE examens (
     INDEX idx_session (session_id),
     INDEX idx_date (date_examen),
     INDEX idx_salle_date (salle_id, date_examen),
-    INDEX idx_statut (statut)
+    INDEX idx_statut (statut),
+    INDEX idx_groupe (groupe)
 ) ENGINE=InnoDB;
 
 
@@ -242,27 +244,51 @@ CREATE TABLE surveillances (
 
 
 -- TABLE: utilisateurs
--- Description: Gestion des utilisateurs du système
+-- Description: Gestion des utilisateurs du système (unifié)
 
 CREATE TABLE utilisateurs (
     id INT AUTO_INCREMENT PRIMARY KEY,
-    username VARCHAR(50) NOT NULL UNIQUE,
-    password_hash VARCHAR(255) NOT NULL,
-    email VARCHAR(150) NOT NULL UNIQUE,
+    
+    -- Identifiants de connexion
+    username VARCHAR(50) UNIQUE,
+    email VARCHAR(255) UNIQUE,
+    password_hash VARCHAR(255),
+    
+    -- Informations personnelles
+    nom VARCHAR(100) NOT NULL,
+    prenom VARCHAR(100),
+    
+    -- Rôle et niveau d'accès
     role ENUM('ADMIN', 'DOYEN', 'VICE_DOYEN', 'CHEF_DEPT', 'PROFESSEUR', 'ETUDIANT') NOT NULL,
+    niveau_acces INT DEFAULT 1,
+    
+    -- Liens vers les entités
     professeur_id INT NULL,
     etudiant_id INT NULL,
     dept_id INT NULL,
+    
+    -- État du compte
     actif BOOLEAN DEFAULT TRUE,
+    premiere_connexion BOOLEAN DEFAULT TRUE,
     derniere_connexion TIMESTAMP NULL,
+    last_login DATETIME DEFAULT NULL,
+    
+    -- Timestamps
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    
+    -- Clés étrangères
     FOREIGN KEY (professeur_id) REFERENCES professeurs(id) ON DELETE SET NULL,
     FOREIGN KEY (etudiant_id) REFERENCES etudiants(id) ON DELETE SET NULL,
     FOREIGN KEY (dept_id) REFERENCES departements(id) ON DELETE SET NULL,
+    
+    -- Index
     INDEX idx_role (role),
-    INDEX idx_actif (actif)
-) ENGINE=InnoDB;
+    INDEX idx_actif (actif),
+    INDEX idx_email (email),
+    INDEX idx_etudiant (etudiant_id),
+    INDEX idx_professeur (professeur_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 
 -- TABLE: conflits

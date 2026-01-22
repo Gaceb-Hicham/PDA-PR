@@ -1,6 +1,6 @@
 """
 Script COMPLET pour importer la base de données vers MariaDB Cloud
-Version 3 - Lecture directe et exécution fiable
+Version 4 - Schéma optimisé et unifié
 """
 import mysql.connector
 import os
@@ -18,84 +18,52 @@ DB_CONFIG = {
 }
 
 def read_sql_file(filepath):
-    """Lit un fichier SQL et retourne les instructions"""
+    """Lit un fichier SQL"""
     with open(filepath, 'r', encoding='utf-8') as f:
         content = f.read()
-    
-    # Supprimer BOM
     if content.startswith('\ufeff'):
         content = content[1:]
-    
     return content
 
 def split_statements(content):
-    """Sépare le contenu SQL en instructions individuelles"""
+    """Sépare le contenu SQL en instructions"""
     statements = []
     current = []
-    in_procedure = False
     
-    lines = content.split('\n')
-    
-    for line in lines:
+    for line in content.split('\n'):
         stripped = line.strip()
         
-        # Ignorer les lignes vides et commentaires seuls
         if not stripped or stripped.startswith('--'):
             continue
-        
-        # Détecter DELIMITER
         if stripped.upper().startswith('DELIMITER'):
-            if '//' in stripped:
-                in_procedure = True
-            else:
-                in_procedure = False
             continue
-        
-        # Dans une procédure, chercher la fin //
-        if in_procedure:
-            if stripped.endswith('//'):
-                current.append(stripped[:-2])  # Sans //
-                stmt = '\n'.join(current).strip()
-                if stmt:
-                    statements.append(stmt)
-                current = []
-            else:
-                current.append(stripped)
-            continue
-        
-        # Ajouter la ligne
+            
         current.append(stripped)
         
-        # Si la ligne se termine par ;, c'est la fin d'une instruction
         if stripped.endswith(';'):
             stmt = ' '.join(current).strip()
             if stmt:
-                statements.append(stmt[:-1])  # Sans le ;
+                statements.append(stmt[:-1])
             current = []
     
-    # Reste
     if current:
         stmt = ' '.join(current).strip()
-        if stmt and stmt.endswith(';'):
-            statements.append(stmt[:-1])
-        elif stmt:
-            statements.append(stmt)
+        if stmt:
+            statements.append(stmt.rstrip(';'))
     
     return statements
 
 def execute_statement(cursor, stmt):
     """Exécute une instruction SQL"""
-    # Ignorer certaines commandes
     upper = stmt.upper().strip()
     
-    if upper.startswith('DROP DATABASE'):
-        return True, "Ignoré"
-    if upper.startswith('CREATE DATABASE') and 'pda_examens' in stmt.lower():
-        return True, "Ignoré"
+    # Ignorer certaines commandes
+    if upper.startswith('DROP DATABASE') or upper.startswith('CREATE DATABASE'):
+        return True, None
     if upper.startswith('USE ') and 'pda_examens' in stmt.lower():
-        return True, "Ignoré"
+        return True, None
     if upper.startswith('ANALYZE '):
-        return True, "Ignoré"
+        return True, None
     
     try:
         cursor.execute(stmt)
@@ -110,7 +78,7 @@ def execute_statement(cursor, stmt):
             return True, None
         return False, str(e)[:80]
 
-def import_file(cursor, filepath, show_success=False):
+def import_file(cursor, filepath, show_tables=False):
     """Importe un fichier SQL"""
     filename = os.path.basename(filepath)
     print(f"\n{'='*55}")
@@ -118,8 +86,8 @@ def import_file(cursor, filepath, show_success=False):
     print('='*55)
     
     if not os.path.exists(filepath):
-        print(f"  ❌ Fichier non trouvé: {filepath}")
-        return 0, 1
+        print(f"  ⚠️  Fichier ignoré (non trouvé)")
+        return 0, 0
     
     content = read_sql_file(filepath)
     statements = split_statements(content)
@@ -134,8 +102,7 @@ def import_file(cursor, filepath, show_success=False):
         ok, err = execute_statement(cursor, stmt)
         if ok:
             success += 1
-            if show_success and 'CREATE TABLE' in stmt.upper():
-                # Extraire le nom de la table
+            if show_tables and 'CREATE TABLE' in stmt.upper():
                 import re
                 match = re.search(r'CREATE TABLE\s+(?:IF NOT EXISTS\s+)?`?(\w+)`?', stmt, re.IGNORECASE)
                 if match:
@@ -149,7 +116,7 @@ def import_file(cursor, filepath, show_success=False):
 
 def main():
     print("\n" + "█" * 60)
-    print("█  IMPORT COMPLET VERS MARIADB CLOUD - V3")
+    print("█  IMPORT BASE DE DONNÉES - SCHÉMA OPTIMISÉ V4")
     print("█" * 60)
     
     # Connexion
@@ -170,17 +137,19 @@ def main():
         print("✅ Base prête")
     except Exception as e:
         print(f"⚠️  {e}")
-        cursor.execute("USE pda_examens")
+        try:
+            cursor.execute("USE pda_examens")
+        except:
+            pass
     
-    # Fichiers à importer
+    # Fichiers à importer (ordre important)
     base = os.path.dirname(os.path.abspath(__file__))
     db = os.path.join(base, 'database')
     
     files = [
-        ('schema.sql', True),           # Tables principales
-        ('auth_tables.sql', True),      # Auth
-        ('add_groupe_column.sql', False), # Colonne groupe
-        ('add_indexes.sql', False),     # Index
+        ('schema.sql', True),           # Tables principales (avec utilisateurs unifié)
+        ('auth_tables.sql', True),      # Tables auth supplémentaires
+        ('add_indexes.sql', False),     # Index additionnels
         ('stored_procedures.sql', False), # Procédures (optionnel)
     ]
     
@@ -189,19 +158,18 @@ def main():
     
     for fname, show in files:
         path = os.path.join(db, fname)
-        if os.path.exists(path):
-            s, e = import_file(cursor, path, show)
-            total_ok += s
-            total_err += e
+        s, e = import_file(cursor, path, show)
+        total_ok += s
+        total_err += e
     
     # Vérification
     print("\n" + "█" * 60)
-    print("█  VÉRIFICATION")
+    print("█  VÉRIFICATION FINALE")
     print("█" * 60)
     
     cursor.execute("SHOW TABLES")
     tables = cursor.fetchall()
-    print(f"\n📊 {len(tables)} tables/vues:")
+    print(f"\n📊 {len(tables)} tables/vues créées:")
     
     for t in tables:
         try:
@@ -210,6 +178,12 @@ def main():
             print(f"   ✅ {t[0]} ({n} lignes)")
         except:
             print(f"   ✅ {t[0]}")
+    
+    # Vérifier la structure de utilisateurs
+    print("\n📋 Structure de 'utilisateurs':")
+    cursor.execute("DESCRIBE utilisateurs")
+    for row in cursor.fetchall():
+        print(f"   • {row[0]}: {row[1]}")
     
     # Résumé
     print("\n" + "█" * 60)
@@ -226,7 +200,7 @@ def main():
         print("   2. Mettre à jour Streamlit Secrets")
         print("   3. git push pour redéployer")
     else:
-        print("\n⚠️  Moins de 10 tables créées. Vérifiez les erreurs.")
+        print("\n⚠️  Vérifiez les erreurs ci-dessus")
 
 if __name__ == "__main__":
     main()
