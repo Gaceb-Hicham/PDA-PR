@@ -309,41 +309,42 @@ def insert(sql, params):
     except: return None
 
 # ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║  CACHED DATA                                                                 ║
+# ║  CACHED DATA - TTL 600s pour réduire latence cloud                          ║
 # ╚══════════════════════════════════════════════════════════════════════════════╝
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_depts():
     return q("SELECT id, nom, code FROM departements ORDER BY nom LIMIT 50")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_formations():
     return q("""SELECT f.id, f.nom, f.code, f.niveau, d.nom as dept, d.id as dept_id
                 FROM formations f JOIN departements d ON f.dept_id = d.id 
                 ORDER BY d.nom, f.niveau, f.nom LIMIT 250""")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_profs():
     return q("""SELECT p.id, p.matricule, p.nom, p.prenom, p.grade, p.specialite, d.nom as dept, d.id as dept_id
                 FROM professeurs p JOIN departements d ON p.dept_id = d.id 
                 ORDER BY d.nom, p.nom LIMIT 250""")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_salles():
     return q("SELECT id, nom, code, type, capacite, batiment FROM lieu_examen ORDER BY type, code LIMIT 100")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_sessions():
     return q("SELECT id, nom, type_session, date_debut, date_fin, annee_universitaire FROM sessions_examen ORDER BY date_debut DESC LIMIT 20")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_creneaux():
     return q("SELECT id, libelle, heure_debut, heure_fin, ordre FROM creneaux_horaires ORDER BY ordre")
 
-@st.cache_data(ttl=120)
+@st.cache_data(ttl=600)
 def get_modules(fid=None):
     if fid: return q("SELECT id, code, nom, credits, semestre FROM modules WHERE formation_id = %s ORDER BY semestre, nom LIMIT 50", (fid,))
     return q("SELECT m.id, m.code, m.nom, m.credits, m.semestre, f.nom as formation FROM modules m JOIN formations f ON m.formation_id = f.id ORDER BY f.nom LIMIT 100")
+
 
 def fmt_time(t):
     if not t: return ""
