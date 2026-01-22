@@ -1,20 +1,19 @@
 """
-Script COMPLET pour importer la base de données vers MariaDB Cloud
-Version 4 - Schéma optimisé et unifié
+Script pour importer la base de données vers Railway MySQL
 """
 import mysql.connector
 import os
 import sys
 
-# Configuration MariaDB Cloud
+# Configuration Railway MySQL (PUBLIC URL)
 DB_CONFIG = {
-    'host': 'serverless-europe-west2.sysp0000.db2.skysql.com',
-    'port': 4057,
-    'user': 'dbpgf25031469',
-    'password': '9bx6PXBZ/b320{6XLMvs',
+    'host': 'metro.proxy.rlwy.net',
+    'port': 43906,
+    'user': 'root',
+    'password': 'aMjJRaAdhsDrzGiLngGanPULJqGpmUiZ',
+    'database': 'railway',
     'charset': 'utf8mb4',
     'autocommit': True,
-    'ssl_disabled': False
 }
 
 def read_sql_file(filepath):
@@ -60,7 +59,7 @@ def execute_statement(cursor, stmt):
     # Ignorer certaines commandes
     if upper.startswith('DROP DATABASE') or upper.startswith('CREATE DATABASE'):
         return True, None
-    if upper.startswith('USE ') and 'pda_examens' in stmt.lower():
+    if upper.startswith('USE '):
         return True, None
     if upper.startswith('ANALYZE '):
         return True, None
@@ -116,11 +115,11 @@ def import_file(cursor, filepath, show_tables=False):
 
 def main():
     print("\n" + "█" * 60)
-    print("█  IMPORT BASE DE DONNÉES - SCHÉMA OPTIMISÉ V4")
+    print("█  IMPORT VERS RAILWAY MYSQL (USA)")
     print("█" * 60)
     
     # Connexion
-    print("\n🔗 Connexion à MariaDB Cloud...")
+    print("\n🔗 Connexion à Railway MySQL...")
     try:
         conn = mysql.connector.connect(**DB_CONFIG)
         cursor = conn.cursor(buffered=True)
@@ -129,28 +128,15 @@ def main():
         print(f"❌ Erreur: {e}")
         sys.exit(1)
     
-    # Créer la base
-    print("\n📦 Création de pda_examens...")
-    try:
-        cursor.execute("CREATE DATABASE IF NOT EXISTS pda_examens CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci")
-        cursor.execute("USE pda_examens")
-        print("✅ Base prête")
-    except Exception as e:
-        print(f"⚠️  {e}")
-        try:
-            cursor.execute("USE pda_examens")
-        except:
-            pass
-    
-    # Fichiers à importer (ordre important)
+    # Fichiers à importer
     base = os.path.dirname(os.path.abspath(__file__))
     db = os.path.join(base, 'database')
     
     files = [
-        ('schema.sql', True),           # Tables principales (avec utilisateurs unifié)
-        ('auth_tables.sql', True),      # Tables auth supplémentaires
-        ('add_indexes.sql', False),     # Index additionnels
-        ('stored_procedures.sql', False), # Procédures (optionnel)
+        ('schema.sql', True),
+        ('auth_tables.sql', True),
+        ('add_indexes.sql', False),
+        ('stored_procedures.sql', False),
     ]
     
     total_ok = 0
@@ -164,7 +150,7 @@ def main():
     
     # Vérification
     print("\n" + "█" * 60)
-    print("█  VÉRIFICATION FINALE")
+    print("█  VÉRIFICATION")
     print("█" * 60)
     
     cursor.execute("SHOW TABLES")
@@ -179,12 +165,6 @@ def main():
         except:
             print(f"   ✅ {t[0]}")
     
-    # Vérifier la structure de utilisateurs
-    print("\n📋 Structure de 'utilisateurs':")
-    cursor.execute("DESCRIBE utilisateurs")
-    for row in cursor.fetchall():
-        print(f"   • {row[0]}: {row[1]}")
-    
     # Résumé
     print("\n" + "█" * 60)
     print(f"█  TOTAL: {total_ok} OK, {total_err} erreurs")
@@ -197,10 +177,10 @@ def main():
         print("\n🎉 IMPORT RÉUSSI!")
         print("\n📋 Prochaines étapes:")
         print("   1. Exécuter: python backend/seed_data.py")
-        print("   2. Mettre à jour Streamlit Secrets")
-        print("   3. git push pour redéployer")
+        print("   2. Mettre à jour Streamlit Secrets avec Railway")
+        print("   3. git push")
     else:
-        print("\n⚠️  Vérifiez les erreurs ci-dessus")
+        print("\n⚠️  Vérifiez les erreurs")
 
 if __name__ == "__main__":
     main()
