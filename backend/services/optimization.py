@@ -116,6 +116,9 @@ class ExamScheduler:
         
         # Départements
         self.departments: List[Dict] = []
+        
+        # OPTIMISATION: Préchargement des inscriptions (évite N+1 queries)
+        self.inscriptions_by_module: Dict[int, List[int]] = defaultdict(list)
     
     def _load_session(self) -> Dict:
         result = execute_query(
@@ -152,6 +155,17 @@ class ExamScheduler:
                 self.professors_by_dept[dept_id].append(prof)
         
         print(f"👨‍🏫 {len(self.professors)} professeurs disponibles")
+    
+    def _preload_inscriptions(self):
+        """OPTIMISATION: Précharge TOUTES les inscriptions en 1 requête"""
+        result = execute_query("""
+            SELECT module_id, etudiant_id FROM inscriptions
+        """) or []
+        
+        for row in result:
+            self.inscriptions_by_module[row['module_id']].append(row['etudiant_id'])
+        
+        print(f"📋 {len(result)} inscriptions préchargées")
     
     def _generate_slots(self):
         """Génère les créneaux avec support jours de repos et division département"""
@@ -353,16 +367,15 @@ class ExamScheduler:
         return self.slots
     
     def _check_student_availability(self, module_id: int, slot: ExamSlot) -> bool:
-        """Vérifie qu'aucun étudiant n'a déjà un examen ce jour"""
+        """Vérifie qu'aucun étudiant n'a déjà un examen ce jour - OPTIMISÉ"""
         max_exams = self.config.get('max_exam_per_student_per_day', 1)
         
-        students = execute_query("""
-            SELECT DISTINCT etudiant_id FROM inscriptions WHERE module_id = %s
-        """, (module_id,)) or []
+        # Utiliser les inscriptions préchargées au lieu de requête DB
+        student_ids = self.inscriptions_by_module.get(module_id, [])
         
-        for s in students:
+        for etudiant_id in student_ids:
             # Compter les examens de cet étudiant ce jour
-            student_day_exams = sum(1 for d in self.student_schedule.get(s['etudiant_id'], set()) if d == slot.date)
+            student_day_exams = sum(1 for d in self.student_schedule.get(etudiant_id, set()) if d == slot.date)
             if student_day_exams >= max_exams:
                 return False
         return True
@@ -467,13 +480,10 @@ class ExamScheduler:
                 self.prof_daily_count[prof_id][slot.date] += 1
                 self.prof_total_supervisions[prof_id] += 1
         
-        # Marquer les étudiants
-        students = execute_query("""
-            SELECT DISTINCT etudiant_id FROM inscriptions WHERE module_id = %s
-        """, (module_id,)) or []
-        
-        for s in students:
-            self.student_schedule[s['etudiant_id']].add(slot.date)
+        # Marquer les étudiants - OPTIMISÉ (utilise données préchargées)
+        student_ids = self.inscriptions_by_module.get(module_id, [])
+        for etudiant_id in student_ids:
+            self.student_schedule[etudiant_id].add(slot.date)
     
     def schedule(self, progress_callback=None) -> Tuple[int, int, float]:
         """Exécute l'algorithme de planification"""
@@ -489,6 +499,7 @@ class ExamScheduler:
         self._load_departments()
         self._load_rooms()
         self._load_professors()
+        self._preload_inscriptions()  # OPTIMISATION: preload inscriptions
         self._generate_slots()
         self._load_exams_by_group()
         
