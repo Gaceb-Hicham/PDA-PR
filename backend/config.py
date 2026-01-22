@@ -12,7 +12,8 @@ def get_db_config():
     try:
         import streamlit as st
         if hasattr(st, 'secrets') and 'database' in st.secrets:
-            # Production: mr Cloud via Streamlit Secrets
+            # Production: MariaDB Cloud via Streamlit Secrets
+            # Optimisé pour réduire la latence réseau
             return {
                 'host': st.secrets.database.host,
                 'port': int(st.secrets.database.port),
@@ -22,7 +23,12 @@ def get_db_config():
                 'charset': 'utf8mb4',
                 'collation': 'utf8mb4_unicode_ci',
                 'autocommit': True,
-                'ssl_disabled': False
+                'ssl_disabled': False,
+                # Optimisations réseau
+                'connect_timeout': 10,
+                'connection_timeout': 30,
+                'compress': True,  # Compression des données
+                'use_pure': True,  # Pure Python pour compatibilité
             }
     except:
         pass
