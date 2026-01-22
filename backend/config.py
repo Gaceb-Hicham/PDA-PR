@@ -12,7 +12,7 @@ def get_db_config():
     try:
         import streamlit as st
         if hasattr(st, 'secrets') and 'database' in st.secrets:
-            # Production: TiDB Cloud via Streamlit Secrets
+            # Production: mr Cloud via Streamlit Secrets
             return {
                 'host': st.secrets.database.host,
                 'port': int(st.secrets.database.port),
